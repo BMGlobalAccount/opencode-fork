@@ -2,7 +2,7 @@ import { DiffLineAnnotation, FileContents, FileDiffOptions, type SelectedLineRan
 import { ComponentProps } from "solid-js"
 import { lineCommentStyles } from "../components/line-comment-styles"
 
-export type DiffProps<T = {}> = FileDiffOptions<T> & {
+export type DiffProps<T = {}> = FileDiffOptions<T, undefined> & {
   before: FileContents
   after: FileContents
   annotations?: DiffLineAnnotation<T>[]
@@ -21,7 +21,7 @@ const unsafeCSS = `
 
 [data-diff],
 [data-file] {
-  /* Pierre 1.2 mixes these override targets at 12% in light mode and 20% in dark mode. */
+  /* Pierre mixes these override targets at 12% in light mode and 20% in dark mode. */
   --diffs-bg-deletion-override: light-dark(
     color-mix(in lab, var(--diffs-bg) 33.333%, var(--diffs-deletion-base)),
     color-mix(in lab, var(--diffs-bg) 60%, var(--diffs-deletion-base))
@@ -198,7 +198,7 @@ ${lineCommentStyles}
 
 `
 
-export function createDefaultOptions<T>(style: FileDiffOptions<T>["diffStyle"]) {
+export function createDefaultOptions<T>(style: FileDiffOptions<T, undefined>["diffStyle"]) {
   return {
     theme: "OpenCode",
     themeType: "system",

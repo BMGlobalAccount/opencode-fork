@@ -3,6 +3,8 @@ export type HoverCommentLine = {
   side?: "additions" | "deletions"
 }
 
+export const LINE_COMMENT_ACTION_OFFSET = 24
+
 export function createHoverCommentUtility(props: {
   label: string
   getHoveredLine: () => HoverCommentLine | undefined
@@ -21,14 +23,14 @@ export function createHoverCommentUtility(props: {
   button.style.justifyContent = "center"
   button.style.border = "none"
   button.style.borderRadius = "var(--radius-md)"
-  button.style.background = "var(--icon-interactive-base)"
-  button.style.color = "var(--white)"
+  button.style.background = "var(--v2-background-bg-inverse)"
+  button.style.color = "var(--v2-icon-icon-inverse)"
   button.style.boxShadow = "var(--shadow-xs)"
   button.style.fontSize = "14px"
   button.style.lineHeight = "1"
   button.style.cursor = "pointer"
   button.style.position = "relative"
-  button.style.left = "30px"
+  button.style.left = `${LINE_COMMENT_ACTION_OFFSET}px`
   button.style.top = "calc((var(--diffs-line-height, 24px) - 20px) / 2)"
 
   let line: HoverCommentLine | undefined

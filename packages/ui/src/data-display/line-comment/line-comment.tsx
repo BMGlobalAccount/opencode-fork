@@ -1,8 +1,9 @@
-import { For, Show, createSignal, onMount, splitProps, type ComponentProps, type JSX } from "solid-js"
+import { For, Show, createEffect, createSignal, onMount, splitProps, type ComponentProps, type JSX } from "solid-js"
 import { FileIcon } from "@opencode/ui/file-icon"
 import { useI18n } from "../../context/i18n"
 import { useFilteredList } from "../../hooks"
 import { Button } from "@opencode/ui/button"
+import { ScrollView } from "@opencode/ui/scroll-view"
 import "./line-comment.css"
 
 /** Horizontal “more” glyph for the display-card overflow control (Figma outline-dots). */
@@ -61,7 +62,7 @@ export type LineCommentEditorMention = {
 }
 
 export interface LineCommentEditorProps extends Omit<ComponentProps<"div">, "children" | "onInput" | "onSubmit"> {
-  /** Visible field label above the textarea (default: “Comment”). */
+  /** Accessible editor label (default: “Comment”). */
   heading?: JSX.Element | string
   value: string
   onInput: (value: string) => void
@@ -88,7 +89,7 @@ function pathDirectory(path: string) {
 
 export function LineCommentEditor(props: LineCommentEditorProps) {
   const i18n = useI18n()
-  let textareaRef: HTMLTextAreaElement | undefined
+  let editorRef: HTMLDivElement | undefined
   const [mentionOpen, setMentionOpen] = createSignal(false)
 
   const [local, rest] = splitProps(props, [
@@ -108,8 +109,79 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
     "classList",
   ])
 
-  const heading = () => local.heading ?? i18n.t("ui.lineComment.submit")
   const canSubmit = () => local.value.trim().length > 0
+
+  const editorSelection = () => {
+    const root = editorRef?.getRootNode()
+    if (root instanceof ShadowRoot) {
+      return (root as unknown as { getSelection?: () => Selection | null }).getSelection?.() ?? window.getSelection()
+    }
+    return window.getSelection()
+  }
+
+  const editorValue = () => {
+    const editor = editorRef
+    if (!editor?.textContent) return ""
+    return editor.innerText.replaceAll("\r", "")
+  }
+
+  const cursorOffset = () => {
+    const editor = editorRef
+    const selection = editorSelection()
+    if (!editor || !selection?.isCollapsed || !selection.rangeCount || !editor.contains(selection.focusNode)) return
+    const range = selection.getRangeAt(0).cloneRange()
+    range.selectNodeContents(editor)
+    range.setEnd(selection.focusNode!, selection.focusOffset)
+    return range.toString().length
+  }
+
+  const setCursorOffset = (offset: number) => {
+    const editor = editorRef
+    const selection = editorSelection()
+    if (!editor || !selection) return
+    const node = editor.firstChild ?? editor.appendChild(document.createTextNode(""))
+    const range = document.createRange()
+    range.setStart(node, Math.min(offset, node.textContent?.length ?? 0))
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+  }
+
+  const writeEditor = (value: string, cursor?: number) => {
+    const editor = editorRef
+    if (!editor) return
+    editor.textContent = value
+    if (cursor !== undefined) setCursorOffset(cursor)
+  }
+
+  const paste = (event: ClipboardEvent) => {
+    event.preventDefault()
+    const text = event.clipboardData?.getData("text/plain")
+    if (!text) return
+    const normalized = text.replace(/\r\n?/g, "\n")
+    const multiline = normalized.includes("\n")
+    const value = multiline
+      ? normalized.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+      : normalized
+    if (
+      typeof document.execCommand === "function" &&
+      document.execCommand(multiline ? "insertHTML" : "insertText", false, value)
+    )
+      return
+
+    const editor = editorRef
+    const selection = editorSelection()
+    if (!editor || !selection?.rangeCount || !editor.contains(selection.anchorNode)) return
+    const range = selection.getRangeAt(0)
+    range.deleteContents()
+    const node = document.createTextNode(normalized)
+    range.insertNode(node)
+    range.setStartAfter(node)
+    range.collapse(true)
+    selection.removeAllRanges()
+    selection.addRange(range)
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertFromPaste", data: normalized }))
+  }
 
   const closeMention = () => {
     setMentionOpen(false)
@@ -117,13 +189,12 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
   }
 
   const currentMention = () => {
-    const textarea = textareaRef
-    if (!textarea) return
+    const editor = editorRef
+    if (!editor) return
     if (!local.mention) return
-    if (textarea.selectionStart !== textarea.selectionEnd) return
-
-    const end = textarea.selectionStart
-    const match = textarea.value.slice(0, end).match(/@(\S*)$/)
+    const end = cursorOffset()
+    if (end === undefined) return
+    const match = editorValue().slice(0, end).match(/@(\S*)$/)
     if (!match) return
 
     return {
@@ -136,19 +207,20 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
   function selectMention(item: { path: string } | undefined) {
     if (!item) return
 
-    const textarea = textareaRef
     const query = currentMention()
-    if (!textarea || !query) return
+    if (!editorRef || !query) return
 
-    const value = `${textarea.value.slice(0, query.start)}@${item.path} ${textarea.value.slice(query.end)}`
+    const current = editorValue()
+    const value = `${current.slice(0, query.start)}@${item.path} ${current.slice(query.end)}`
     const cursor = query.start + item.path.length + 2
 
+    writeEditor(value, cursor)
     local.onInput(value)
     closeMention()
 
     requestAnimationFrame(() => {
-      textarea.focus()
-      textarea.setSelectionRange(cursor, cursor)
+      editorRef?.focus()
+      setCursorOffset(cursor)
     })
   }
 
@@ -189,9 +261,15 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
     local.onSubmit(v)
   }
 
+  createEffect(() => {
+    const value = local.value
+    if (!editorRef || editorValue() === value) return
+    writeEditor(value)
+  })
+
   onMount(() => {
     if (local.autofocus === false) return
-    requestAnimationFrame(() => textareaRef?.focus())
+    requestAnimationFrame(() => editorRef?.focus())
   })
 
   return (
@@ -206,62 +284,74 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
     >
       <div data-slot="line-comment-v2-shell">
         <div data-slot="line-comment-v2-field">
-          <div data-slot="line-comment-v2-label">{heading()}</div>
-          <textarea
-            ref={(el) => {
-              textareaRef = el
-            }}
-            data-slot="line-comment-v2-textarea"
-            dir="auto"
-            rows={local.rows ?? 3}
-            placeholder={local.placeholder ?? i18n.t("ui.lineComment.contextPlaceholder")}
-            value={local.value}
-            style={{ "unicode-bidi": "plaintext", "text-align": "start" }}
-            onInput={(e) => {
-              local.onInput(e.currentTarget.value)
-              syncMention()
-            }}
-            onClick={() => syncMention()}
-            onSelect={() => syncMention()}
-            onKeyDown={(e) => {
-              e.stopPropagation()
-              if (e.isComposing || e.keyCode === 229) return
+          <ScrollView data-slot="line-comment-v2-editor-scroll" orientation="vertical">
+            <div
+              ref={(el) => {
+                editorRef = el
+                writeEditor(local.value)
+              }}
+              data-slot="line-comment-v2-editor"
+              role="textbox"
+              aria-label={typeof local.heading === "string" ? local.heading : i18n.t("ui.lineComment.submit")}
+              aria-multiline="true"
+              contentEditable="plaintext-only"
+              dir="auto"
+              style={{ "unicode-bidi": "plaintext", "text-align": "start" }}
+              onInput={(event) => {
+                const value = event.currentTarget.textContent ? event.currentTarget.innerText.replaceAll("\r", "") : ""
+                const cursor = cursorOffset()
+                if (!event.isComposing && cursor !== undefined) writeEditor(value, cursor)
+                local.onInput(value)
+                syncMention()
+              }}
+              onPaste={paste}
+              onClick={() => syncMention()}
+              onKeyUp={() => syncMention()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.isComposing || e.keyCode === 229) return
 
-              if (mentionOpen()) {
+                if (mentionOpen()) {
+                  if (e.key === "Escape") {
+                    e.preventDefault()
+                    closeMention()
+                    return
+                  }
+
+                  if (e.key === "Tab") {
+                    if (mention.flat().length === 0) return
+                    e.preventDefault()
+                    selectActiveMention()
+                    return
+                  }
+
+                  const nav = e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Enter"
+                  const ctrlNav = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === "n" || e.key === "p")
+                  if ((nav || ctrlNav) && mention.flat().length > 0) {
+                    mention.onKeyDown(e)
+                    e.preventDefault()
+                    return
+                  }
+                }
+
                 if (e.key === "Escape") {
                   e.preventDefault()
-                  closeMention()
+                  e.currentTarget.blur()
+                  local.onCancel()
                   return
                 }
-
-                if (e.key === "Tab") {
-                  if (mention.flat().length === 0) return
+                if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
-                  selectActiveMention()
-                  return
+                  submit()
                 }
-
-                const nav = e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "Enter"
-                const ctrlNav = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === "n" || e.key === "p")
-                if ((nav || ctrlNav) && mention.flat().length > 0) {
-                  mention.onKeyDown(e)
-                  e.preventDefault()
-                  return
-                }
-              }
-
-              if (e.key === "Escape") {
-                e.preventDefault()
-                e.currentTarget.blur()
-                local.onCancel()
-                return
-              }
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault()
-                submit()
-              }
-            }}
-          />
+              }}
+            />
+            <Show when={!local.value}>
+              <div data-slot="line-comment-v2-placeholder" dir="auto">
+                {local.placeholder ?? i18n.t("ui.lineComment.contextPlaceholder")}
+              </div>
+            </Show>
+          </ScrollView>
           <Show when={mentionOpen() && mention.flat().length > 0}>
             <div data-slot="line-comment-v2-mention-list">
               <For each={mention.flat().slice(0, 10)}>
@@ -292,12 +382,11 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
           </Show>
         </div>
         <div data-slot="line-comment-v2-footer">
-          <div data-slot="line-comment-v2-footer-meta">{local.selection}</div>
           <div data-slot="line-comment-v2-footer-actions">
-            <Button type="button" size="normal" variant="ghost" onClick={() => local.onCancel()}>
+            <Button type="button" size="small" variant="ghost-muted" onClick={() => local.onCancel()}>
               {local.cancelLabel ?? i18n.t("ui.lineComment.cancel")}
             </Button>
-            <Button type="button" size="normal" variant="contrast" disabled={!canSubmit()} onClick={submit}>
+            <Button type="button" size="small" variant="submit" disabled={!canSubmit()} onClick={submit}>
               {local.submitLabel ?? i18n.t("ui.lineComment.submit")}
             </Button>
           </div>

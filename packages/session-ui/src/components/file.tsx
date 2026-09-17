@@ -21,10 +21,13 @@ import { type PreloadFileDiffResult, type PreloadMultiFileDiffResult } from "@pi
 import { createMediaQuery } from "@solid-primitives/media"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
+import { Button } from "@opencode/ui/button"
+import { Portal } from "solid-js/web"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
+import { LINE_COMMENT_ACTION_OFFSET } from "../pierre/comment-hover"
 import {
   applyViewerScheme,
   clearReadyWatcher,
@@ -65,6 +68,9 @@ type SharedProps<T> = {
   classList?: ComponentProps<"div">["classList"]
   media?: FileMediaOptions
   search?: FileSearchControl
+  textSelectionAction?: {
+    label: string
+  }
 }
 
 export type FileSearchHandle = {
@@ -75,17 +81,17 @@ export type FileSearchControl = {
   register: (handle: FileSearchHandle | null) => void
 }
 
-export type TextFileProps<T = {}> = FileOptions<T> &
+export type TextFileProps<T = {}> = FileOptions<T, undefined> &
   SharedProps<T> & {
     mode: "text"
     file: FileContents
     annotations?: LineAnnotation<T>[]
-    preloadedDiff?: PreloadMultiFileDiffResult<T>
+    preloadedDiff?: PreloadMultiFileDiffResult<T, undefined>
   }
 
-type DiffPreload<T> = PreloadMultiFileDiffResult<T> | PreloadFileDiffResult<T>
+type DiffPreload<T> = PreloadMultiFileDiffResult<T, undefined> | PreloadFileDiffResult<T, undefined>
 
-type DiffBaseProps<T> = FileDiffOptions<T> &
+type DiffBaseProps<T> = FileDiffOptions<T, undefined> &
   SharedProps<T> & {
     mode: "diff"
     annotations?: DiffLineAnnotation<T>[]
@@ -123,6 +129,7 @@ const sharedKeys = [
   "onLineNumberSelectionEnd",
   "onRendered",
   "preloadedDiff",
+  "textSelectionAction",
 ] as const
 
 const textKeys = ["file", ...sharedKeys] as const
@@ -140,6 +147,7 @@ type MouseHit = {
 
 type ViewerConfig = {
   enableLineSelection: () => boolean
+  textSelectionAction: () => { label: string } | undefined
   selectedLines: () => SelectedLineRange | null | undefined
   commentedLines: () => SelectedLineRange[]
   onLineSelectionEnd: (range: SelectedLineRange | null) => void
@@ -148,6 +156,7 @@ type ViewerConfig = {
   lineFromMouseEvent: (event: MouseEvent) => MouseHit
   setSelectedLines: (range: SelectedLineRange | null, preserve?: { root: ShadowRoot; text: Range }) => void
   updateSelection: (preserveTextSelection: boolean) => void
+  readTextSelection: () => { range: SelectedLineRange; text: Range } | undefined
   buildDragSelection: () => SelectedLineRange | undefined
   buildClickSelection: () => SelectedLineRange | undefined
   onDragStart: (hit: MouseHit) => void
@@ -162,6 +171,7 @@ function useFileViewer(config: ViewerConfig) {
   let overlay!: HTMLDivElement
   let selectionFrame: number | undefined
   let dragFrame: number | undefined
+  let textSelectionFrame: number | undefined
   let dragStart: number | undefined
   let dragEnd: number | undefined
   let dragMoved = false
@@ -171,6 +181,11 @@ function useFileViewer(config: ViewerConfig) {
   const ready = createReadyWatcher()
   const bridge = createLineNumberSelectionBridge()
   const [rendered, setRendered] = createSignal(0)
+  const [textSelection, setTextSelection] = createSignal<{
+    range: SelectedLineRange
+    rect: DOMRect
+    label: string
+  }>()
 
   const getRoot = () => getViewerRoot(container)
   const getHost = () => getViewerHost(container)
@@ -204,6 +219,49 @@ function useFileViewer(config: ViewerConfig) {
     })
   }
 
+  const updateTextSelection = () => {
+    textSelectionFrame = undefined
+    const action = config.textSelectionAction()
+    if (!action) {
+      setTextSelection(undefined)
+      return
+    }
+    const selected = config.readTextSelection()
+    if (!selected) {
+      setTextSelection(undefined)
+      return
+    }
+
+    const rect = selected.text.getBoundingClientRect()
+    if (rect.width === 0 && rect.height === 0) {
+      setTextSelection(undefined)
+      return
+    }
+    setTextSelection({ range: selected.range, rect, label: action.label })
+  }
+
+  const scheduleTextSelectionUpdate = () => {
+    if (textSelectionFrame !== undefined) return
+    textSelectionFrame = requestAnimationFrame(updateTextSelection)
+  }
+
+  const clearTextSelection = () => {
+    setTextSelection(undefined)
+    const root = getRoot()
+    const selection =
+      (root as unknown as { getSelection?: () => Selection | null } | undefined)?.getSelection?.() ??
+      window.getSelection()
+    selection?.removeAllRanges()
+  }
+
+  const activateTextSelection = () => {
+    const selected = textSelection()
+    if (!selected) return
+    clearTextSelection()
+    config.setSelectedLines(selected.range)
+    config.onLineSelectionEnd(selected.range)
+  }
+
   // -- mouse handlers --
 
   const handleMouseDown = (event: MouseEvent) => {
@@ -218,6 +276,11 @@ function useFileViewer(config: ViewerConfig) {
     if (hit.line === undefined) return
 
     bridge.begin(false, hit.line)
+    if (config.textSelectionAction()) {
+      setTextSelection(undefined)
+      if (lastSelection) config.setSelectedLines(null)
+      return
+    }
     dragStart = hit.line
     dragEnd = hit.line
     dragMoved = false
@@ -250,6 +313,10 @@ function useFileViewer(config: ViewerConfig) {
   const handleMouseUp = () => {
     if (!config.enableLineSelection()) return
     if (bridge.finish() === "numbers") return
+    if (config.textSelectionAction()) {
+      scheduleTextSelectionUpdate()
+      return
+    }
     if (dragStart === undefined) return
 
     if (!dragMoved) {
@@ -284,6 +351,10 @@ function useFileViewer(config: ViewerConfig) {
 
   const handleSelectionChange = () => {
     if (!config.enableLineSelection()) return
+    if (config.textSelectionAction()) {
+      scheduleTextSelectionUpdate()
+      return
+    }
     if (dragStart === undefined) return
     const selection = window.getSelection()
     if (!selection || selection.isCollapsed) return
@@ -326,7 +397,9 @@ function useFileViewer(config: ViewerConfig) {
   })
 
   createEffect(() => {
-    config.setSelectedLines(config.selectedLines() ?? null)
+    const selected = config.selectedLines() ?? null
+    if (selected && config.textSelectionAction()) clearTextSelection()
+    config.setSelectedLines(selected)
   })
 
   createEffect(() => {
@@ -336,6 +409,13 @@ function useFileViewer(config: ViewerConfig) {
     makeEventListener(container, "mousemove", handleMouseMove)
     makeEventListener(window, "mouseup", handleMouseUp)
     makeEventListener(document, "selectionchange", handleSelectionChange)
+    if (!config.textSelectionAction()) return
+    makeEventListener(document, "scroll", scheduleTextSelectionUpdate, true)
+    makeEventListener(window, "resize", scheduleTextSelectionUpdate)
+    makeEventListener(document, "keydown", (event) => {
+      if (event.key !== "Escape") return
+      clearTextSelection()
+    })
   })
 
   onCleanup(() => {
@@ -343,9 +423,11 @@ function useFileViewer(config: ViewerConfig) {
 
     if (selectionFrame !== undefined) cancelAnimationFrame(selectionFrame)
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame)
+    if (textSelectionFrame !== undefined) cancelAnimationFrame(textSelectionFrame)
 
     selectionFrame = undefined
     dragFrame = undefined
+    textSelectionFrame = undefined
     dragStart = undefined
     dragEnd = undefined
     dragMoved = false
@@ -393,15 +475,21 @@ function useFileViewer(config: ViewerConfig) {
     getHost,
     find,
     scheduleSelectionUpdate,
+    textSelection,
+    activateTextSelection,
   }
 }
 
 type Viewer = ReturnType<typeof useFileViewer>
 
-type ModeAdapter = Omit<ViewerConfig, "enableLineSelection" | "selectedLines" | "commentedLines" | "onLineSelectionEnd">
+type ModeAdapter = Omit<
+  ViewerConfig,
+  "enableLineSelection" | "textSelectionAction" | "selectedLines" | "commentedLines" | "onLineSelectionEnd"
+>
 
 type ModeConfig = {
   enableLineSelection: () => boolean
+  textSelectionAction: () => { label: string } | undefined
   selectedLines: () => SelectedLineRange | null | undefined
   commentedLines: () => SelectedLineRange[] | undefined
   onLineSelectionEnd: (range: SelectedLineRange | null) => void
@@ -424,6 +512,7 @@ type VirtualStrategy = {
 function useModeViewer(config: ModeConfig, adapter: ModeAdapter) {
   return useFileViewer({
     enableLineSelection: config.enableLineSelection,
+    textSelectionAction: config.textSelectionAction,
     selectedLines: config.selectedLines,
     commentedLines: () => config.commentedLines() ?? [],
     onLineSelectionEnd: config.onLineSelectionEnd,
@@ -728,6 +817,42 @@ function ViewerShell(props: {
       </Show>
       <div ref={(el) => (props.viewer.container = el)} />
       <div ref={(el) => (props.viewer.overlay = el)} class="pointer-events-none absolute inset-0 z-0" />
+      <Show when={props.viewer.textSelection()}>
+        {(selection) => (
+          <Portal>
+            <Button
+              data-slot="file-text-selection-action"
+              size="small"
+              variant="submit"
+              class="z-[100] whitespace-nowrap"
+              style={{
+                position: "fixed",
+                left: `${Math.max(
+                  8,
+                  Math.min(window.innerWidth - 200, selection().rect.left + LINE_COMMENT_ACTION_OFFSET),
+                )}px`,
+                top: `${
+                  selection().rect.bottom + 38 > window.innerHeight
+                    ? selection().rect.top - 6
+                    : selection().rect.bottom + 6
+                }px`,
+                transform: selection().rect.bottom + 38 > window.innerHeight ? "translateY(-100%)" : undefined,
+              }}
+              onPointerDown={(event: PointerEvent) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onMouseDown={(event: MouseEvent) => {
+                event.preventDefault()
+                event.stopPropagation()
+              }}
+              onClick={props.viewer.activateTextSelection}
+            >
+              {selection().label}
+            </Button>
+          </Portal>
+        )}
+      </Show>
     </div>
   )
 }
@@ -845,6 +970,18 @@ function TextViewer<T>(props: TextFileProps<T>) {
       if (!preserveTextSelection || !selected.text) return
       restoreShadowTextSelection(root, selected.text)
     },
+    readTextSelection: () => {
+      const root = viewer.getRoot()
+      if (!root) return
+      const selected = readShadowLineSelection({
+        root,
+        lineForNode: findFileLineNumber,
+        sideForNode: findCodeSelectionSide,
+        preserveTextSelection: true,
+      })
+      if (!selected?.text) return
+      return { range: selected.range, text: selected.text }
+    },
     buildDragSelection: () => {
       if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return
       return { start: Math.min(viewer.dragStart, viewer.dragEnd), end: Math.max(viewer.dragStart, viewer.dragEnd) }
@@ -862,6 +999,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   viewer = useModeViewer(
     {
       enableLineSelection: () => props.enableLineSelection === true,
+      textSelectionAction: () => local.textSelectionAction,
       selectedLines: () => local.selectedLines,
       commentedLines: () => local.commentedLines,
       onLineSelectionEnd: (range) => local.onLineSelectionEnd?.(range),
@@ -957,7 +1095,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
   let instance: FileDiff<T> | undefined
   let instanceVirtualizer: Virtualizer | undefined
   let instanceWorkerPool: ReturnType<typeof getWorkerPool>
-  let instanceVirtualHunkSeparators: FileDiffOptions<T>["hunkSeparators"] | undefined
+  let instanceVirtualHunkSeparators: FileDiffOptions<T, undefined>["hunkSeparators"] | undefined
   let instanceFileDiff: FileDiffMetadata | undefined
   let instanceBefore: FileContents | undefined
   let instanceAfter: FileContents | undefined
@@ -1008,6 +1146,20 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
 
       setSelectedLines(selected.range)
     },
+    readTextSelection: () => {
+      const root = viewer.getRoot()
+      if (!root) return
+      const selected = readShadowLineSelection({
+        root,
+        lineForNode: findDiffLineNumber,
+        sideForNode: diffSelectionSide,
+        preserveTextSelection: true,
+      })
+      if (!selected?.text) return
+      const range = fixDiffSelection(root, selected.range)
+      if (!range) return
+      return { range, text: selected.text }
+    },
     buildDragSelection: () => {
       if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return
       const selected: SelectedLineRange = { start: viewer.dragStart, end: viewer.dragEnd }
@@ -1038,6 +1190,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
   viewer = useModeViewer(
     {
       enableLineSelection: () => props.enableLineSelection === true,
+      textSelectionAction: () => local.textSelectionAction,
       selectedLines: () => local.selectedLines,
       commentedLines: () => local.commentedLines,
       onLineSelectionEnd: (range) => local.onLineSelectionEnd?.(range),
@@ -1066,7 +1219,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     lineDiffType: "none",
     maxLineDiffLength: 0,
     tokenizeMaxLineLength: 1,
-  } satisfies Pick<FileDiffOptions<T>, "lineDiffType" | "maxLineDiffLength" | "tokenizeMaxLineLength">
+  } satisfies Pick<FileDiffOptions<T, undefined>, "lineDiffType" | "maxLineDiffLength" | "tokenizeMaxLineLength">
 
   const lineCallbacks = createLineCallbacks({
     viewer,
@@ -1076,7 +1229,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
     onLineNumberSelectionEnd: (range) => local.onLineNumberSelectionEnd?.(range),
   })
 
-  const options = createMemo<FileDiffOptions<T>>(() => {
+  const options = createMemo<FileDiffOptions<T, undefined>>(() => {
     const base = {
       ...createDefaultOptions(props.diffStyle),
       ...others,
