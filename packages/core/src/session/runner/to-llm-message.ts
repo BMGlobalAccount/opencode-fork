@@ -72,7 +72,27 @@ const directoryAttachment = (file: FileAttachment): ContentPart => ({
   },
 })
 
+const referenceAttachment = (file: FileAttachment, location: string): ContentPart => ({
+  type: "text",
+  text: `\n\n${[
+    `Attached file: ${location}`,
+    file.description === undefined ? undefined : `Description: ${file.description}`,
+  ]
+    .filter((line): line is string => line !== undefined)
+    .join("\n")}`,
+  metadata: {
+    attachment: {
+      source: file.source,
+      name: file.name,
+      description: file.description,
+    },
+  },
+})
+
 const attachmentContent = (file: FileAttachment): ContentPart[] => {
+  // Oversized files are admitted without their bytes; the model opens them by path.
+  const location = file.data.length === 0 && file.mime !== "application/x-directory" ? attachmentLocation(file) : undefined
+  if (location !== undefined) return [referenceAttachment(file, location)]
   if (file.mime === "text/plain") return [textAttachment(file)]
   if (file.mime === "application/x-directory") return [directoryAttachment(file)]
   if (imageMimes.has(file.mime) || file.mime === "application/pdf") {

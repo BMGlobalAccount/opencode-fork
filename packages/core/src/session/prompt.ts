@@ -189,11 +189,17 @@ const readFileAttachment = Effect.fn("SessionPrompt.readFileAttachment")(functio
     }
   }
   if (info.type !== "File") return yield* new AttachmentError({ uri, message: `Attachment is not a file: ${uri}` })
+  // The file exists on the server, so an oversized one is delivered as a bare reference the
+  // model reads with tools instead of rejecting the prompt.
   if (Number(info.size) > MAX_ATTACHMENT_BYTES)
-    return yield* new AttachmentError({
-      uri,
-      message: `Attachment exceeds the ${MAX_ATTACHMENT_BYTES} byte limit: ${uri}`,
-    })
+    return {
+      bytes: Buffer.alloc(0),
+      source: { type: "uri" as const, uri },
+      start: undefined,
+      end: undefined,
+      name: path.basename(target),
+      mime: "application/octet-stream",
+    }
   const bytes = yield* fs
     .readFile(target)
     .pipe(Effect.mapError(() => new AttachmentError({ uri, message: `Unable to read attachment: ${uri}` })))

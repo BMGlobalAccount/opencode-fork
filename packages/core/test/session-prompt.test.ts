@@ -431,6 +431,32 @@ describe("Session.prompt", () => {
     }),
   )
 
+  it.effect("admits oversized local files as bare references", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const directory = yield* tmpdirScoped("opencode-session-prompt-")
+      const source = path.join(directory.path, "server.log")
+      yield* Effect.promise(() => Bun.write(source, Buffer.alloc(20 * 1024 * 1024 + 1, 0x61)))
+
+      const message = yield* session.prompt({
+        sessionID,
+        text: "Inspect this log",
+        files: [{ uri: pathToFileURL(source).href }],
+        resume: false,
+      })
+
+      expect(message.payload.files).toEqual([
+        {
+          data: "",
+          mime: "application/octet-stream",
+          source: { type: "uri", uri: pathToFileURL(source).href },
+          name: "server.log",
+        },
+      ])
+    }),
+  )
+
   it.effect("normalizes large image content before validating persisted Base64", () =>
     Effect.gen(function* () {
       yield* setup

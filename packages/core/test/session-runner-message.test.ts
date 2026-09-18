@@ -405,6 +405,40 @@ Recent work
     })
   })
 
+  test("renders oversized reference files as a bare path", () => {
+    const location = path.resolve("/logs/server.log")
+    const file = FileAttachment.make({
+      data: Base64.make(""),
+      mime: "application/octet-stream",
+      source: { type: "uri", uri: pathToFileURL(location).href },
+      name: "server.log",
+    })
+    const messages = toLLMMessages(
+      [
+        SessionMessage.User.make({
+          id: id("user-oversized"),
+          type: "user",
+          text: "Review this log",
+          files: [file],
+          time: { created },
+        }),
+      ],
+      model,
+    )
+
+    expect(messages[0]).toMatchObject({
+      role: "user",
+      content: [
+        { type: "text", text: "Review this log" },
+        {
+          type: "text",
+          text: `\n\nAttached file: ${location}`,
+          metadata: { attachment: { source: file.source, name: "server.log" } },
+        },
+      ],
+    })
+  })
+
   test("preserves attachment order after the prompt", () => {
     const directory = path.resolve("/project/src")
     const messages = toLLMMessages(
