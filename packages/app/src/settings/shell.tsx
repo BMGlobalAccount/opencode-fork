@@ -237,9 +237,11 @@ function RootSettings() {
               ...serverTabs.map((item) => ({
                 ...item,
                 label: language.t(item.label),
-                disabled: !single() || (item.value === "pairing" && !!singleEntry()?.ssh),
+                disabled:
+                  !single() ||
+                  (item.value === "pairing" && (singleEntry()?.connection?.type === "ssh" || !!singleEntry()?.ssh)),
                 tooltip:
-                  item.value === "pairing" && singleEntry()?.ssh
+                  item.value === "pairing" && (singleEntry()?.connection?.type === "ssh" || singleEntry()?.ssh)
                     ? language.t("settings.pairing.sshUnavailable")
                     : undefined,
                 onPrefetch: item.value === "workspaces" ? prefetchWorkspaces : undefined,
@@ -259,7 +261,12 @@ function RootSettings() {
   })
   createEffect(() => {
     const view = surface.view()
-    if (view.type === "root" && view.tab === "pairing" && singleEntry()?.ssh) surface.open("general")
+    if (
+      view.type === "root" &&
+      view.tab === "pairing" &&
+      (singleEntry()?.connection?.type === "ssh" || singleEntry()?.ssh)
+    )
+      surface.open("general")
   })
 
   const change = (value: string) => {
@@ -358,15 +365,23 @@ function ServerSettings(props: { entry: SettingsServer }) {
         ...item,
         label: item.value === "general" ? props.entry.name : language.t(item.label),
         disabled:
-          item.value !== "general" && (!props.entry.connection || (item.value === "pairing" && !!props.entry.ssh)),
+          item.value !== "general" &&
+          (!props.entry.connection ||
+            (item.value === "pairing" && (props.entry.connection.type === "ssh" || !!props.entry.ssh))),
         tooltip:
-          item.value === "pairing" && props.entry.ssh ? language.t("settings.pairing.sshUnavailable") : undefined,
+          item.value === "pairing" && (props.entry.connection?.type === "ssh" || props.entry.ssh)
+            ? language.t("settings.pairing.sshUnavailable")
+            : undefined,
         onPrefetch: item.value === "workspaces" ? prefetchWorkspaces : undefined,
       })),
     },
   ])
   createEffect(() => {
-    if ((!props.entry.connection || props.entry.ssh) && surface.view().tab === "pairing") surface.select("general")
+    if (
+      (!props.entry.connection || props.entry.connection.type === "ssh" || props.entry.ssh) &&
+      surface.view().tab === "pairing"
+    )
+      surface.select("general")
     if (!props.entry.connection && surface.view().tab !== "general") surface.select("general")
   })
   const change = (value: string) => {

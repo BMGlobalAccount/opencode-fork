@@ -51,14 +51,17 @@ export function DesktopPairingCommand() {
   const servers = useSettingsServers()
 
   command.register("desktop-pairing", () =>
-    platform.platform === "desktop" && servers().some((server) => server.connection && !server.ssh)
+    platform.platform === "desktop" &&
+      servers().some((server) => server.connection && server.connection.type !== "ssh" && !server.ssh)
       ? [
           {
             id: "server.pair",
             title: language.t("command.server.pair"),
             category: language.t("command.category.server"),
             onSelect: () => {
-              const server = servers().find((item) => item.connection && !item.ssh)
+              const server = servers().find(
+                (item) => item.connection && item.connection.type !== "ssh" && !item.ssh,
+              )
               if (server) settings.openServer(server.key, "pairing")
             },
           },
