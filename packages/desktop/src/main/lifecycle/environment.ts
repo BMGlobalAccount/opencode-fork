@@ -3,7 +3,6 @@ import http from "node:http"
 import { homedir, tmpdir } from "node:os"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import { app } from "electron"
-import contextMenu from "electron-context-menu"
 import { Effect, FileSystem, Path } from "effect"
 import { CHANNEL } from "../constants"
 import { DesktopPaths } from "../paths"
@@ -25,7 +24,6 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 
 export const configureApplication = Effect.fn("Application.configure")(function* () {
   const path = yield* Path.Path
-  contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
   try {
     process.chdir(homedir())
   } catch {}
@@ -46,6 +44,13 @@ export const configureApplication = Effect.fn("Application.configure")(function*
     app.setPath("sessionData", path.join(testRoot, "session"))
     if (testOnboarding) app.setPath("documents", path.join(testRoot, "documents"))
   }
+})
+
+// electron-context-menu attaches to every existing and future window, so it can load once the first
+// window is up instead of holding up startup with its dependency tree.
+export const installContextMenu = Effect.gen(function* () {
+  const { default: contextMenu } = yield* Effect.promise(() => import("electron-context-menu"))
+  contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
 })
 
 export function acquireApplicationLock() {
