@@ -14,6 +14,7 @@ const provider = {
 const secondProvider = {
   ...provider,
   id: "console-google",
+  canonical: "google",
   name: "Anomaly / Google",
   package: "@ai-sdk/google",
 }
@@ -303,6 +304,11 @@ test("Console account is primary and the code is displayed without a copy-code s
   )
   await expect(providerGroups.getByText(/models? enabled$/)).toHaveCount(0)
   const google = dialog.getByRole("button", { name: "Google", exact: true })
+  await expect(
+    dialog.locator(
+      '[data-component="provider-model-group"][data-provider="console-google"] [data-component="provider-icon"] use',
+    ),
+  ).toHaveAttribute("href", /#google$/)
   await google.click()
   await expect(google).toHaveAttribute("aria-expanded", "false")
   await expect(list.getByRole("radio", { name: "Console Gemini" })).toBeHidden()

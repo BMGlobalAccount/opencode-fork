@@ -1,4 +1,5 @@
 import { Icon } from "@opencode/ui/icon"
+import { iconNames, type IconName } from "@opencode/ui/icons/provider"
 import { ProviderIcon } from "@opencode/ui/provider-icon"
 import type { JSX } from "solid-js"
 import { Show } from "solid-js"
@@ -6,7 +7,7 @@ import { OpenCodeLogo } from "@/providers/opencode-logo"
 import "@/settings/settings.css"
 
 export function ProviderModelGroup(props: {
-  provider: { id: string; name: string }
+  provider: { id: string; canonical?: string; name: string }
   name?: string
   expanded: boolean
   disabled?: boolean
@@ -15,6 +16,13 @@ export function ProviderModelGroup(props: {
   ref?: (element: HTMLElement) => void
   onExpandedChange: (expanded: boolean) => void
 }) {
+  const icon = () =>
+    [
+      props.provider.canonical,
+      props.provider.canonical?.replace(/-token-plan$/, ""),
+      props.provider.id.replace(/^console-/, ""),
+    ].find((id): id is IconName => !!id && iconNames.includes(id as IconName)) ?? props.provider.id
+
   return (
     <section
       ref={props.ref}
@@ -34,7 +42,7 @@ export function ProviderModelGroup(props: {
           <span class="provider-model-group-label">
             <Show
               when={props.provider.id === "opencode"}
-              fallback={<ProviderIcon id={props.provider.id} width={16} height={16} class="shrink-0" />}
+              fallback={<ProviderIcon id={icon()} width={16} height={16} class="shrink-0" />}
             >
               <OpenCodeLogo class="size-4 shrink-0" />
             </Show>
