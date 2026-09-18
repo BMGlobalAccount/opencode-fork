@@ -35,7 +35,6 @@ const PROVIDER_ICON_SIZE = 16
 
 export const SettingsProviders: Component<{
   directory: string | undefined
-  onBack?: () => void
   onSelectProvider?: (providerID: string) => void
 }> = (props) => {
   const dialog = useDialog()
@@ -44,7 +43,7 @@ export const SettingsProviders: Component<{
   const data = useData()
   const providers = useProviders(() => props.directory)
   const integrations = useIntegrations(() => props.directory)
-  const providerConnect = useProviderConnectController({ onBack: props.onBack })
+  const providerConnect = useProviderConnectController()
   const [state, setState] = createStore({
     disconnecting: {} as Record<string, "removing" | "removed" | "absent" | undefined>,
     consoleExpanded: false,
@@ -87,7 +86,6 @@ export const SettingsProviders: Component<{
           data.location.model.sync(location),
         ]).catch(() => undefined)
       },
-      { dismissOnBackdrop: false },
     )
   }
 

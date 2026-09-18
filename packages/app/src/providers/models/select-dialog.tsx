@@ -623,9 +623,7 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
 
   const provider = () => {
     void import("@/providers/connect/dialog").then((x) => {
-      void dialog.show(() => <x.DialogConnectProvider directory={directory()} />, undefined, {
-        dismissOnBackdrop: false,
-      })
+      void dialog.show(() => <x.DialogConnectProvider directory={directory()} />)
     })
   }
 

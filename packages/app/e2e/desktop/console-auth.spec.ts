@@ -417,6 +417,15 @@ test("Console account is primary and the code is displayed without a copy-code s
   expect(state.cancelled).toEqual([])
 })
 
+test("provider form returns to the picker and its backdrop closes", async ({ page }) => {
+  const { dialog } = await fixture(page)
+  await dialog.getByRole("button", { name: "Navigate back", exact: true }).click()
+  await expect(dialog.getByRole("heading", { name: "Connect provider", exact: true })).toBeVisible()
+  await expect(dialog.getByRole("button", { name: /^OpenCode / })).toBeVisible()
+  await page.locator('[data-component="dialog-overlay"]').click({ position: { x: 8, y: 8 } })
+  await expect(dialog).toBeHidden()
+})
+
 test("Manage models groups Console providers like Settings", async ({ page }) => {
   const { state, dialog } = await fixture(page, false, { draft: true, paidModels: true, directProvider: true })
   state.status = "complete"
@@ -495,6 +504,8 @@ test("a single managed provider uses a collapsible container", async ({ page }) 
   await provider.click()
   await expect(dialog.getByRole("radio", { name: "Console Sonnet" })).toBeVisible()
   await expect(dialog.locator('[data-component="available-models-heading"]')).toContainText("Available models")
+  await page.locator('[data-component="dialog-overlay"]').click({ position: { x: 8, y: 8 } })
+  await expect(dialog).toBeHidden()
 })
 
 test("model choice is skipped after a provider has already been connected", async ({ page }) => {

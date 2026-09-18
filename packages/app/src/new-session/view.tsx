@@ -224,11 +224,9 @@ function NewSessionTips(props: {
       return
     }
     void import("@/providers/connect/dialog").then(({ DialogConnectProvider }) => {
-      void dialog.show(
-        () => <DialogConnectProvider directory={sdk().directory} selection={props.selection} onDone={props.onDone} />,
-        undefined,
-        { dismissOnBackdrop: false },
-      )
+      void dialog.show(() => (
+        <DialogConnectProvider directory={sdk().directory} selection={props.selection} onDone={props.onDone} />
+      ))
     })
   }
   const dismiss = () => {

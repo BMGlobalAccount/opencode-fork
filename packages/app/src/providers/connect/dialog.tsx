@@ -50,14 +50,14 @@ const CUSTOM_ID = "_custom"
 type IntegrationForm = NonNullable<ProviderConnectMethod["form"]>[number]
 type StringForm = Extract<IntegrationForm, { type: "string" }>
 
-export function useProviderConnectController(options: { onBack?: () => void } = {}) {
+export function useProviderConnectController() {
   const [store, setStore] = createStore({ selected: undefined as string | undefined })
   const reset = () => setStore("selected", undefined)
 
   return {
     selected: () => store.selected,
     select: (provider?: string) => setStore("selected", provider),
-    back: options.onBack ?? reset,
+    reset,
   }
 }
 
@@ -81,7 +81,7 @@ export const DialogConnectProvider: Component<{
     authorization: false,
   })
   const language = useLanguage()
-  const reset = controller.back
+  const reset = controller.reset
   const back = { current: reset }
   let focusHost: HTMLDivElement | undefined
   const holdFocus = () => focusHost?.focus({ preventScroll: true })
@@ -125,6 +125,7 @@ export const DialogConnectProvider: Component<{
 
   return (
     <Dialog
+      preventBackdropDismiss={state.authorization}
       containerClass={
         state.modelProvider
           ? "!h-[min(calc(100vh_-_16px),560px)] !w-[min(calc(100vw_-_16px),640px)]"
@@ -527,7 +528,10 @@ function ProviderConnection(props: {
     controller.authorization()?.attemptID
     setConsoleState({ copied: false, copyFailed: false })
   })
-  createEffect(() => props.onAuthorization(controller.authorization() !== undefined))
+  createEffect(() => {
+    const state = controller.auth.state()
+    props.onAuthorization(controller.authorization() !== undefined && (state === "waiting" || state === "refreshing"))
+  })
   const provider = createMemo(() => ({
     id: props.provider,
     name:

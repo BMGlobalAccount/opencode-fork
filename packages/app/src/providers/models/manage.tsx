@@ -39,9 +39,7 @@ export const DialogManageModels: Component = () => {
   const directory = () => decode64(local.slug())
 
   const handleConnectProvider = () => {
-    void dialog.show(() => <DialogConnectProvider directory={directory()} />, undefined, {
-      dismissOnBackdrop: false,
-    })
+    void dialog.show(() => <DialogConnectProvider directory={directory()} />)
   }
   const providerList = (providerID: string) => local.model.list().filter((x) => x.provider.id === providerID)
   const providerVisible = (providerID: string) =>

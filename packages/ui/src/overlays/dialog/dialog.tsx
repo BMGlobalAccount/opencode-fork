@@ -1,7 +1,6 @@
 import { CloseButton, Content, Description, Title } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
 import { useI18n } from "../../context/i18n"
-import { useDialogOptions } from "../../context/dialog"
 import "./dialog.css"
 
 export interface DialogProps extends ParentProps {
@@ -12,6 +11,7 @@ export interface DialogProps extends ParentProps {
   classList?: ComponentProps<"div">["classList"]
   fit?: boolean
   onCloseAutoFocus?: ComponentProps<typeof Content>["onCloseAutoFocus"]
+  preventBackdropDismiss?: boolean
 }
 
 export interface DialogHeaderProps extends ParentProps {
@@ -84,7 +84,6 @@ export function DialogHeader(props: DialogHeaderProps) {
 }
 
 export function Dialog(props: DialogProps) {
-  const options = useDialogOptions()
   const [local] = splitProps(props, [
     "size",
     "variant",
@@ -94,6 +93,7 @@ export function Dialog(props: DialogProps) {
     "fit",
     "children",
     "onCloseAutoFocus",
+    "preventBackdropDismiss",
   ])
 
   return (
@@ -102,13 +102,14 @@ export function Dialog(props: DialogProps) {
       data-variant={local.variant === "settings" ? "settings" : undefined}
       data-fit={local.fit ? true : undefined}
       data-size={local.size || "normal"}
+      data-prevent-backdrop-dismiss={local.preventBackdropDismiss ? "" : undefined}
     >
       <div data-slot="dialog-container" class={local.containerClass}>
         <Content
           data-slot="dialog-content"
           onCloseAutoFocus={local.onCloseAutoFocus}
           onPointerDownOutside={(event) => {
-            if (options.dismissOnBackdrop === false) event.preventDefault()
+            if (local.preventBackdropDismiss) event.preventDefault()
           }}
           classList={{
             ...local.classList,

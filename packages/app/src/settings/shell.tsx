@@ -314,7 +314,6 @@ function RootSettings() {
             <Tabs.Content value="providers" class="settings-panel">
               <SettingsProviders
                 directory={undefined}
-                onBack={() => surface.select("providers")}
                 onSelectProvider={(providerID) => {
                   setState("modelProvider", providerID)
                   surface.select("models")
@@ -411,7 +410,6 @@ function ServerSettings(props: { entry: SettingsServer }) {
             <Tabs.Content value="providers" class="settings-panel">
               <SettingsProviders
                 directory={undefined}
-                onBack={() => surface.select("providers")}
                 onSelectProvider={(providerID) => {
                   setState("modelProvider", providerID)
                   surface.select("models")

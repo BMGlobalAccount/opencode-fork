@@ -17,12 +17,6 @@ import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
 
 type DialogElement = () => JSX.Element
-export type DialogOptions = { dismissOnBackdrop?: boolean }
-const DialogOptionsContext = createContext<DialogOptions>({})
-
-export function useDialogOptions() {
-  return useContext(DialogOptionsContext)
-}
 
 type Active = {
   id: string
@@ -81,17 +75,12 @@ function init() {
     makeEventListener(window, "keydown", onKeyDown, { capture: true })
   })
 
-  const mount = (
-    element: DialogElement,
-    owner: Owner,
-    onClose: (() => void) | undefined,
-    layer: number,
-    options: DialogOptions = {},
-  ) => {
+  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
     const id = Math.random().toString(36).slice(2)
     const zIndex = 50 + layer * 10
     let dispose: (() => void) | undefined
     let setClosing: ((closing: boolean) => void) | undefined
+    let layerElement: HTMLDivElement | undefined
 
     // Stacked dialogs render as sibling portals, so only the top layer may own the focus trap.
     const node = runWithOwner(owner, () =>
@@ -113,11 +102,17 @@ function init() {
                 data-component="dialog-overlay"
                 style={{ "z-index": String(zIndex) }}
                 onClick={() => {
-                  if (options.dismissOnBackdrop === false) return
+                  if (
+                    layerElement
+                      ?.querySelector<HTMLElement>('[data-component="dialog-v2"]')
+                      ?.hasAttribute("data-prevent-backdrop-dismiss")
+                  )
+                    return
                   close(id)
                 }}
               />
               <div
+                ref={layerElement}
                 data-dialog-layer={layer}
                 style={{
                   position: "fixed",
@@ -129,7 +124,7 @@ function init() {
                   "pointer-events": "none",
                 }}
               >
-                <DialogOptionsContext.Provider value={options}>{element()}</DialogOptionsContext.Provider>
+                {element()}
               </div>
             </Kobalte.Portal>
           </Kobalte>
@@ -143,16 +138,16 @@ function init() {
     setStack((items) => [...items, active])
   }
 
-  const push = (element: DialogElement, owner: Owner, onClose?: () => void, options?: DialogOptions) => {
+  const push = (element: DialogElement, owner: Owner, onClose?: () => void) => {
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, stack().length, options)
+    mount(element, owner, onClose, stack().length)
   }
 
-  const show = (element: DialogElement, owner: Owner, onClose?: () => void, options?: DialogOptions) => {
+  const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
     for (const item of stack()) item.dispose()
     setStack([])
     if (timer.current !== undefined) {
@@ -160,7 +155,7 @@ function init() {
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, 0, options)
+    mount(element, owner, onClose, 0)
   }
 
   return {
@@ -198,13 +193,13 @@ export function useDialog() {
     get active() {
       return ctx.stack().at(-1)
     },
-    show(element: DialogElement, onClose?: () => void, options?: DialogOptions) {
+    show(element: DialogElement, onClose?: () => void) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.show(element, base, onClose, options))
+      return startTransition(() => ctx.show(element, base, onClose))
     },
-    push(element: DialogElement, onClose?: () => void, options?: DialogOptions) {
+    push(element: DialogElement, onClose?: () => void) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.push(element, base, onClose, options))
+      return startTransition(() => ctx.push(element, base, onClose))
     },
     close() {
       ctx.close()
