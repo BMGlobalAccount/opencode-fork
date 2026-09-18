@@ -192,6 +192,8 @@ export const dict = {
   "dialog.provider.viewAll": "Show more providers",
 
   "provider.connect.title": "Connect {{provider}}",
+  "provider.connect.opencode.name": "OpenCode",
+  "provider.connect.opencode.errorTitle": "Connect to OpenCode",
   "provider.connect.console.title": "Connect OpenCode Console account",
   "provider.connect.console.name": "OpenCode Console",
   "provider.connect.console.instructions":
@@ -225,14 +227,14 @@ export const dict = {
   "provider.connect.console.model": "Model",
   "provider.connect.console.start": "Start coding",
   "provider.connect.console.done": "Done",
-  "provider.connect.console.continue": "Continue with OpenCode Console",
+  "provider.connect.console.continue": "Continue to OpenCode Console",
   "provider.connect.console.openingBrowser": "Opening browser…",
   "provider.connect.console.serviceAccount": "Service account?",
   "provider.connect.console.useApiKey": "Use API key",
   "provider.connect.console.otherMethods": "Other methods",
   "provider.connect.console.serviceKey": "API key (service account)",
   "provider.connect.console.serviceKeyDescription": "Connect using a service-account API key from OpenCode Console.",
-  "provider.connect.console.intro": "Sign in once to use the models available through your OpenCode account.",
+  "provider.connect.console.intro": "Sign in with your OpenCode Console account to use the available models.",
   "provider.connect.remote.title": "Connecting on “{{server}}”",
   "provider.connect.remote.description":
     "Your OpenCode credentials will be stored on this server. Models will be available through this server.",

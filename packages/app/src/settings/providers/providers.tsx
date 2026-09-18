@@ -12,6 +12,7 @@ import { createEffect, createMemo, type Component, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServerSDK } from "@/runtime/server/client"
+import { useData } from "@/runtime/server/current"
 import { DialogConnectProvider, useProviderConnectController } from "@/providers/connect/dialog"
 import { SettingsList } from "@/settings/list"
 import "@/settings/settings.css"
@@ -40,6 +41,7 @@ export const SettingsProviders: Component<{
   const dialog = useDialog()
   const language = useLanguage()
   const serverSdk = useServerSDK()
+  const data = useData()
   const providers = useProviders(() => props.directory)
   const integrations = useIntegrations(() => props.directory)
   const providerConnect = useProviderConnectController({ onBack: props.onBack })
@@ -56,25 +58,48 @@ export const SettingsProviders: Component<{
 
   const connect = (provider?: string) => {
     providerConnect.select(provider)
-    void dialog.show(() => (
-      <DialogConnectProvider
-        directory={props.directory}
-        controller={providerConnect}
-        onConnected={(providerID) =>
-          setState("disconnecting", (current) =>
-            providerID === "opencode" ? {} : { ...current, [providerID]: undefined },
-          )
-        }
-      />
-    ))
+    void dialog.show(
+      () => (
+        <DialogConnectProvider
+          directory={props.directory}
+          defaultLocation={props.directory === undefined}
+          controller={providerConnect}
+          onConnected={(providerID) =>
+            setState("disconnecting", (current) =>
+              providerID === "opencode" ? {} : { ...current, [providerID]: undefined },
+            )
+          }
+        />
+      ),
+      () => {
+        const location = props.directory ? { directory: props.directory } : undefined
+        data.location.integration.invalidate(location)
+        data.location.provider.invalidate(location)
+        data.location.model.invalidate(location)
+        void Promise.all([
+          data.location.integration.sync(location),
+          data.location.provider.sync(location),
+          data.location.model.sync(location),
+        ]).catch(() => undefined)
+      },
+      { dismissOnBackdrop: false },
+    )
   }
 
   const available = createMemo(() => {
-    return providers
-      .connected()
+    const connected = providers.connected()
+    const managedConsole = consoleProviderGroup(connected)
+    const consoleConnected = integrations
+      .list()
+      .find((item) => item.id === "opencode")
+      ?.connections.some((connection) => connection.type === "credential" || connection.type === "env")
+    return connected
       .filter(
         (provider) =>
-          provider.id !== "opencode" || Object.values(provider.models).some((model) => model.cost.input > 0),
+          provider.id !== "opencode" ||
+          managedConsole !== undefined ||
+          consoleConnected ||
+          Object.values(provider.models).some((model) => model.cost.input > 0),
       )
       .toSorted((a, b) => Number(b.id === "opencode-go") - Number(a.id === "opencode-go"))
   })
@@ -241,7 +266,7 @@ export const SettingsProviders: Component<{
                               <div class="settings-provider-console-summary">
                                 <div class="settings-provider-main">
                                   <span class="settings-provider-name truncate">
-                                    {language.t("provider.connect.console.name")}
+                                    {language.t("provider.connect.opencode.name")}
                                   </span>
                                   <Badge>{group().workspace}</Badge>
                                 </div>
@@ -274,7 +299,7 @@ export const SettingsProviders: Component<{
                             <Button
                               size="normal"
                               variant="ghost-muted"
-                              onClick={() => void disconnect(item.id, language.t("provider.connect.console.name"))}
+                              onClick={() => void disconnect(item.id, language.t("provider.connect.opencode.name"))}
                             >
                               {language.t("common.disconnect")}
                             </Button>

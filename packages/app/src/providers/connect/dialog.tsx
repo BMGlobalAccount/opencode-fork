@@ -63,6 +63,7 @@ export function useProviderConnectController(options: { onBack?: () => void } = 
 
 export const DialogConnectProvider: Component<{
   directory?: string
+  defaultLocation?: boolean
   controller?: ReturnType<typeof useProviderConnectController>
   provider?: string
   initialMethod?: string
@@ -103,6 +104,7 @@ export const DialogConnectProvider: Component<{
             <ProviderConnection
               provider={provider}
               directory={props.directory}
+              defaultLocation={props.defaultLocation}
               onBack={reset}
               setBack={(handler) => (back.current = handler)}
               initialMethod={props.initialMethod}
@@ -185,6 +187,7 @@ export const DialogConnectProvider: Component<{
 
 function ProviderPicker(props: { directory?: string; onSelect: (provider: string) => void; onPrepare?: () => void }) {
   const integrations = useIntegrations(() => props.directory)
+  const providers = useProviders(() => props.directory)
   const language = useLanguage()
   const [store, setStore] = createStore({
     filter: "",
@@ -193,10 +196,25 @@ function ProviderPicker(props: { directory?: string; onSelect: (provider: string
   })
   const featured = ["opencode-go", "opencode", "anthropic", "openai", "google", "openrouter", "vercel"]
   const custom = () => ({ id: CUSTOM_ID, name: language.t("dialog.provider.custom.label") })
+  const connected = createMemo(() => {
+    const values = providers.connected()
+    const console = consoleProviderGroup(values)
+    return new Set(
+      values.flatMap((provider) => {
+        if (provider.id === "opencode" && !console) return []
+        return [provider.id, provider.integrationID].filter((id): id is string => id !== undefined)
+      }),
+    )
+  })
   const all = createMemo(() => {
     language.locale()
     const query = store.filter.trim().toLowerCase()
-    const values = [custom(), ...integrations.list()]
+    const values = [
+      custom(),
+      ...integrations
+        .list()
+        .filter((integration) => integration.connections.length === 0 && !connected().has(integration.id)),
+    ]
     if (!query) return values
     return values.filter((provider) => `${provider.id} ${provider.name}`.toLowerCase().includes(query))
   })
@@ -338,6 +356,7 @@ function ProviderPicker(props: { directory?: string; onSelect: (provider: string
 function ProviderConnection(props: {
   provider: string
   directory?: string
+  defaultLocation?: boolean
   onBack: () => void
   setBack: (handler: () => void) => void
   initialMethod?: string
@@ -351,7 +370,7 @@ function ProviderConnection(props: {
   const params = useParams()
   const language = useLanguage()
   const providers = useProviders(() => props.directory)
-  const initialDirectory = props.directory ?? decode64(params.dir)
+  const initialDirectory = props.defaultLocation ? undefined : (props.directory ?? decode64(params.dir))
   const directory = () => initialDirectory
   const platform = usePlatform()
   const sdk = useServerSDK()
@@ -383,6 +402,7 @@ function ProviderConnection(props: {
     provider: () => props.provider,
     directory,
     initialMethod: remote ? undefined : props.initialMethod,
+    prepare: desktopConsole ? prepareConsoleCatalog : undefined,
     onComplete: () => {
       props.onConnected?.()
       if (consoleState.firstConnection) {
@@ -455,6 +475,26 @@ function ProviderConnection(props: {
     if (props.provider !== "opencode") return
     return consoleProviderGroup(connectionProviders())
   })
+
+  async function prepareConsoleCatalog(active: () => boolean) {
+    const location = initialDirectory ? { directory: initialDirectory } : undefined
+    const deadline = Date.now() + 10_000
+    while (!managedProviders() && active() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250))
+      if (!active()) return false
+      data.location.provider.invalidate(location)
+      data.location.model.invalidate(location)
+      await Promise.all([data.location.provider.sync(location), data.location.model.sync(location)]).catch(
+        () => undefined,
+      )
+    }
+    if (!active() || !managedProviders()) return false
+    data.location.provider.invalidate(location)
+    data.location.model.invalidate(location)
+    return Promise.all([data.location.provider.sync(location), data.location.model.sync(location)])
+      .then(() => true)
+      .catch(() => false)
+  }
   const connectionGroupName = (name: string) => {
     const managed = managedProviders()
     return managed ? consoleProviderName(managed, name) : name
@@ -966,27 +1006,29 @@ function ProviderConnection(props: {
           {(model) => {
             const selected = () => consoleState.selectedModel === modelKey(model)
             return (
-              <button
-                type="button"
-                role="radio"
-                data-component="settings-row"
-                data-first-provider-model=""
-                data-selected={selected() ? "" : undefined}
-                aria-checked={selected()}
-                class="w-full text-start focus-visible:outline-none"
-                onClick={() => setConsoleState("selectedModel", modelKey(model))}
-              >
-                <div data-slot="settings-row-copy">
-                  <div data-slot="settings-row-title">
-                    <span class="min-w-0 truncate">{model.name}</span>
+              <div data-component="connected-model-row-shell" class="connected-model-row-shell">
+                <button
+                  type="button"
+                  role="radio"
+                  data-component="settings-row"
+                  data-first-provider-model=""
+                  data-selected={selected() ? "" : undefined}
+                  aria-checked={selected()}
+                  class="connected-model-row text-start focus-visible:outline-none"
+                  onClick={() => setConsoleState("selectedModel", modelKey(model))}
+                >
+                  <div data-slot="settings-row-copy">
+                    <div data-slot="settings-row-title">
+                      <span class="min-w-0 truncate">{model.name}</span>
+                    </div>
                   </div>
-                </div>
-                <div data-slot="settings-row-control" class="size-4">
-                  <Show when={selected()}>
-                    <Icon name="check" size="small" class="shrink-0 text-v2-icon-icon-base" />
-                  </Show>
-                </div>
-              </button>
+                  <div data-slot="settings-row-control" class="size-4">
+                    <Show when={selected()}>
+                      <Icon name="check" size="small" class="shrink-0 text-v2-icon-icon-base" />
+                    </Show>
+                  </div>
+                </button>
+              </div>
             )
           }}
         </For>
@@ -1120,6 +1162,9 @@ function ProviderConnection(props: {
           <div class="text-[15px] font-[530] leading-5 tracking-[-0.13px] text-v2-text-text-base">
             <DialogTitle>
               <Switch>
+                <Match when={desktopConsole && controller.auth.state() === "error"}>
+                  {language.t("provider.connect.opencode.errorTitle")}
+                </Match>
                 <Match when={consoleMethod()}>{language.t("provider.connect.console.title")}</Match>
                 <Match
                   when={
@@ -1128,14 +1173,20 @@ function ProviderConnection(props: {
                 >
                   {language.t("provider.connect.title.anthropicProMax")}
                 </Match>
+                <Match when={desktopConsole}>
+                  {language.t("provider.connect.title", { provider: language.t("provider.connect.opencode.name") })}
+                </Match>
                 <Match when={true}>{language.t("provider.connect.title", { provider: provider().name })}</Match>
               </Switch>
             </DialogTitle>
           </div>
         </div>
         <div
+          data-component="provider-connect-content"
           class={
-            desktopConsole ? "flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4" : "flex min-h-0 flex-1 flex-col"
+            desktopConsole
+              ? "flex min-h-0 flex-1 flex-col overflow-y-auto px-[12px] pb-4"
+              : "flex min-h-0 flex-1 flex-col"
           }
         >
           <Show when={remote}>
@@ -1195,9 +1246,7 @@ function ProviderConnection(props: {
                 </div>
               </Match>
               <Match when={desktopConsole && controller.auth.state() === "refreshing"}>
-                <p role="status" class="text-[13px] leading-5 text-v2-text-text-muted">
-                  {language.t("provider.connect.console.refreshing")}
-                </p>
+                <OAuthAutoView />
               </Match>
               <Match when={controller.loading()}>
                 <div class="text-14-regular text-text-base">

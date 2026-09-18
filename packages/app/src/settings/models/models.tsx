@@ -150,7 +150,15 @@ export const SettingsModels: Component<{
     setStore("collapsed", CONSOLE_GROUP_KEY, Boolean(!managed))
     list.grouped.latest.forEach((group) => setStore("collapsed", group.category, group.category !== provider))
     requestAnimationFrame(() => {
-      section.scrollIntoView({ block: "start" })
+      const panel = section.closest<HTMLElement>(".settings-panel")
+      const header = panel?.querySelector<HTMLElement>(".settings-tab-header")
+      if (panel && header) {
+        panel.scrollTo({
+          top: panel.scrollTop + section.getBoundingClientRect().top - header.getBoundingClientRect().bottom - 24,
+        })
+      } else {
+        section.scrollIntoView({ block: "start" })
+      }
       section
         .querySelector<HTMLElement>(".provider-model-group-trigger, .settings-models-group-trigger")
         ?.focus({ preventScroll: true })
@@ -286,7 +294,7 @@ export const SettingsModels: Component<{
                           <span class="settings-models-group-label">
                             <OpenCodeLogo class="settings-models-provider-icon size-4 shrink-0" />
                             <span class="settings-models-group-title">
-                              {language.t("provider.connect.console.name")}
+                              {language.t("provider.connect.opencode.name")}
                             </span>
                             <Badge>{console().managed.workspace}</Badge>
                           </span>

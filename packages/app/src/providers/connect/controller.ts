@@ -29,6 +29,7 @@ export function createProviderConnectionController(options: {
   provider: () => string
   directory: () => string | undefined
   onComplete: () => void
+  prepare?: (active: () => boolean) => Promise<boolean>
   initialMethod?: string
   pollInterval?: number
 }) {
@@ -190,7 +191,12 @@ export function createProviderConnectionController(options: {
       .then(() => true)
       .catch(() => false)
     if (polling.disposed || generation !== polling.generation) return
-    if (!refreshed && desktopConsole) {
+    const prepared =
+      refreshed && options.prepare
+        ? await options.prepare(() => !polling.disposed && generation === polling.generation)
+        : refreshed
+    if (polling.disposed || generation !== polling.generation) return
+    if (!prepared && desktopConsole) {
       dispatch({ type: "auth.error", error: language.t("provider.connect.console.refreshFailed") })
       return
     }

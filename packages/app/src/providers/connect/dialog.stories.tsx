@@ -8,7 +8,7 @@ import { DialogConnectProvider, useProviderConnectController } from "./dialog"
 
 function ConnectProviderDialogStory() {
   const dialog = useDialog()
-  const open = () => dialog.show(() => <DialogConnectProvider />)
+  const open = () => dialog.show(() => <DialogConnectProvider />, undefined, { dismissOnBackdrop: false })
 
   onMount(open)
 
@@ -24,7 +24,8 @@ function ProviderConnectionDialogStory(props) {
   const dialog = useDialog()
   const controller = useProviderConnectController()
   controller.select(props.provider)
-  const open = () => dialog.show(() => <DialogConnectProvider controller={controller} />)
+  const open = () =>
+    dialog.show(() => <DialogConnectProvider controller={controller} />, undefined, { dismissOnBackdrop: false })
 
   onMount(open)
 
