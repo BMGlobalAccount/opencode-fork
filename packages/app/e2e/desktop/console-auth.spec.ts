@@ -86,7 +86,7 @@ async function fixture(
     draft?: boolean
     browserFailed?: boolean
     slowStart?: Promise<void>
-    existingConnection?: boolean
+    existingProvider?: boolean
     singleProvider?: boolean
     stagedCatalog?: boolean
     paidModels?: boolean
@@ -108,9 +108,8 @@ async function fixture(
   const server = remote ? "http://production.example:4096" : undefined
   const currentIntegration = () => ({
     ...integration,
-    connections: options.existingConnection
-      ? [{ type: "env", name: "OPENCODE_API_KEY" }]
-      : state.status === "complete" && !options.staleIntegration
+    connections:
+      state.status === "complete" && !options.staleIntegration
         ? [{ type: "credential", id: "cred_console", label: "Anomaly" }]
         : [],
   })
@@ -178,10 +177,12 @@ async function fixture(
         location,
         data:
           state.status !== "complete"
-            ? []
+            ? options.existingProvider
+              ? [directProvider]
+              : []
             : state.catalogReady
               ? [provider, ...(options.singleProvider ? [] : [secondProvider])].concat(
-                  options.directProvider ? [directProvider] : [],
+                  options.directProvider || options.existingProvider ? [directProvider] : [],
                 )
               : [{ ...provider, name: "OpenCode" }],
       },
@@ -191,7 +192,7 @@ async function fixture(
     if (route.request().method() === "OPTIONS") return route.fallback()
     if (state.modelError) return route.fulfill({ status: 503, headers: { "access-control-allow-origin": "*" } })
     const available = state.status === "complete" && state.models
-    const source = options.directProvider ? [...models, directModel] : models
+    const source = options.directProvider || options.existingProvider ? [...models, directModel] : models
     const catalog = options.paidModels
       ? source.map((model) => ({ ...model, cost: [{ input: 1, output: 1, cache: { read: 0, write: 0 } }] }))
       : source
@@ -209,7 +210,9 @@ async function fixture(
               : options.singleProvider
                 ? catalog.filter((model) => model.providerID === provider.id)
                 : catalog
-            : [],
+            : options.existingProvider
+              ? [directModel]
+              : [],
       },
     })
   })
@@ -476,7 +479,7 @@ test("a single managed provider uses a collapsible container", async ({ page }) 
 })
 
 test("model choice is skipped after a provider has already been connected", async ({ page }) => {
-  const { state, dialog } = await fixture(page, false, { existingConnection: true })
+  const { state, dialog } = await fixture(page, false, { existingProvider: true })
   await dialog.getByRole("button", { name: "Continue to OpenCode Console" }).click()
   await expect(dialog.getByRole("group", { name: "Device code: TFXS-STXG" })).toBeVisible()
   state.status = "complete"
