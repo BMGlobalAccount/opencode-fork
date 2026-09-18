@@ -9,6 +9,7 @@ import { createComposerSubmission } from "./submission-state"
 import { buildPromptRequest } from "./request"
 import { setCursorPosition } from "./editor/dom"
 import { blobDataUrl } from "@/runtime/persistence/drafts"
+import { isAttachment } from "./prompt-parts"
 import type { ModelSelection } from "@/providers/models/selection"
 
 const submitting = new WeakSet<object>()
@@ -151,6 +152,9 @@ function handoffMessage(value: ComposerSubmission): SessionMessageUser {
     })),
     metadata: {
       displayText: value.text,
+      attachments: value.prompt.flatMap((part) =>
+        part.type === "path" ? [{ name: part.filename, mime: part.mime, path: part.path }] : [],
+      ),
       comments: value.context.flatMap((item) =>
         item.comment?.trim()
           ? [
@@ -185,7 +189,7 @@ function readSubmission(
   if (mode === "shell" && !text.trim()) return
   const images = prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
   const comments = context.filter((item) => !!item.comment?.trim()).length
-  if (!text.trim() && images.length === 0 && comments === 0) return
+  if (!text.trim() && !prompt.some(isAttachment) && comments === 0) return
 
   const controls = input.adapter.controls()
   const model = controls.model.selection.current()
@@ -358,6 +362,7 @@ async function sendPrompt(
     metadata: {
       displayText: request.displayText,
       comments: request.comments,
+      attachments: request.attachments,
       agent: value.selection.agent,
       model: {
         ...value.selection.model,
@@ -372,19 +377,15 @@ async function sendPrompt(
 
 async function buildSubmissionRequest(session: ComposerSession, value: ComposerSubmission) {
   const images = await Promise.all(
-    value.images.map(async (attachment) => ({
-      ...attachment,
-      dataUrl: await blobDataUrl(attachment.blob, attachment.mime),
-    })),
+    value.images.map(async (attachment) => ({ ...attachment, dataUrl: await blobDataUrl(attachment.blob, attachment.mime) })),
   )
-  const request = buildPromptRequest({
+  return buildPromptRequest({
     prompt: value.prompt,
     context: value.context,
     images,
     text: value.text,
     sessionDirectory: session.directory,
   })
-  return request
 }
 
 function failSubmission(

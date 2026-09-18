@@ -314,7 +314,7 @@ describe("tool argument prototype safety", () => {
 })
 
 describe("tool arguments cross in a useful form where JSON.stringify would give {}", () => {
-  test("Set, RegExp, and URLSearchParams; Map stays {} like JSON", async () => {
+  test("Set and URLSearchParams; RegExp and Map stay {} like JSON", async () => {
     let seen: unknown
     const runtime = CodeMode.make({
       tools: {
@@ -334,6 +334,20 @@ describe("tool arguments cross in a useful form where JSON.stringify would give 
       runtime,
       `return await tools.inspect({ v: { s: new Set([1, 2]), r: /x/g, p: new URLSearchParams("a=1&b=2"), m: new Map([["k", 1]]) } })`,
     )
-    expect(seen).toEqual({ s: [1, 2], r: "/x/g", p: "a=1&b=2", m: {} })
+    expect(seen).toEqual({ s: [1, 2], r: {}, p: "a=1&b=2", m: {} })
+  })
+})
+
+describe("tools.search alias", () => {
+  test("tools.search(...) behaves like the bare search(...) when no tool owns that path", async () => {
+    const runtime = CodeMode.make({ tools: { api: { list: echo("List things", "listed") } } })
+    const direct = await value(runtime, `return search({ query: "list" })`)
+    expect(await value(runtime, `return tools.search({ query: "list" })`)).toStrictEqual(direct)
+    expect(await value(runtime, `return (await tools.search({ query: "list" })).items[0].path`)).toBe("tools.api.list")
+  })
+
+  test("a registered root-level search tool takes precedence", async () => {
+    const runtime = CodeMode.make({ tools: { search: echo("Custom search", "custom") } })
+    expect(await value(runtime, `return await tools.search({})`)).toBe("custom")
   })
 })

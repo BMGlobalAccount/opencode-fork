@@ -40,13 +40,13 @@ export function createPairing(storage: DesktopStorage.Interface) {
   }
   const readInfo = async (credentials: ReturnType<typeof requireCredentials>) => {
     const { OpenCode } = await import("@opencode/client/promise")
-    const status = await OpenCode.make({
+    const info = await OpenCode.make({
       baseUrl: credentials.url,
       headers: credentials.password
         ? { Authorization: `Basic ${Buffer.from(`opencode:${credentials.password}`).toString("base64")}` }
         : undefined,
-    }).server.status()
-    return { urls: status.urls, username: "opencode" as const, password: credentials.password ?? "" }
+    }).server.info()
+    return { urls: info.urls, username: "opencode" as const, password: credentials.password ?? "" }
   }
   const info = () => readInfo(requireCredentials())
   const serveTailscale = async (executable: string, port: number) => {

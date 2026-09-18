@@ -27,7 +27,7 @@ it.live("authenticates API requests behind the frontend transform while allowing
         }),
     )
     const response = yield* Effect.promise(() =>
-      fetch(new URL("/api/status", HttpServer.formatAddress(server.address)), {
+      fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
         method: "OPTIONS",
         headers: {
           origin: "http://localhost:3000",
@@ -42,7 +42,7 @@ it.live("authenticates API requests behind the frontend transform while allowing
     expect(response.headers.get("access-control-allow-headers")).toBe("authorization")
 
     const status = yield* Effect.promise(() =>
-      fetch(new URL("/api/status", HttpServer.formatAddress(server.address)), {
+      fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
         headers: {
           authorization: `Basic ${btoa("opencode:secret")}`,
           origin: "http://localhost:3000",
@@ -60,7 +60,7 @@ it.live("authenticates API requests behind the frontend transform while allowing
         Effect.gen(function* () {
           const allowed = origin === "https://untrusted.example.com" ? null : origin
           const preflight = yield* Effect.promise(() =>
-            fetch(new URL("/api/status", HttpServer.formatAddress(server.address)), {
+            fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
               method: "OPTIONS",
               headers: {
                 origin,
@@ -73,7 +73,7 @@ it.live("authenticates API requests behind the frontend transform while allowing
           expect(preflight.headers.get("access-control-allow-origin")).toBe(allowed)
 
           const status = yield* Effect.promise(() =>
-            fetch(new URL("/api/status", HttpServer.formatAddress(server.address)), {
+            fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), {
               headers: { origin, authorization: `Basic ${btoa("opencode:secret")}` },
             }),
           )
@@ -82,7 +82,7 @@ it.live("authenticates API requests behind the frontend transform while allowing
           yield* Effect.promise(() => status.arrayBuffer())
 
           const denied = yield* Effect.promise(() =>
-            fetch(new URL("/api/status", HttpServer.formatAddress(server.address)), { headers: { origin } }),
+            fetch(new URL("/api/info", HttpServer.formatAddress(server.address)), { headers: { origin } }),
           )
           expect(denied.status).toBe(401)
           expect(denied.headers.get("access-control-allow-origin")).toBe(allowed)
