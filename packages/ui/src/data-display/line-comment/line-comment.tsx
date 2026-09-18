@@ -61,6 +61,8 @@ export type LineCommentEditorMention = {
   items: (query: string) => string[] | Promise<string[]>
 }
 
+const mentionCursorKeys = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"])
+
 export interface LineCommentEditorProps extends Omit<ComponentProps<"div">, "children" | "onInput" | "onSubmit"> {
   /** Accessible editor label (default: “Comment”). */
   heading?: JSX.Element | string
@@ -299,14 +301,17 @@ export function LineCommentEditor(props: LineCommentEditorProps) {
               style={{ "unicode-bidi": "plaintext", "text-align": "start" }}
               onInput={(event) => {
                 const value = event.currentTarget.textContent ? event.currentTarget.innerText.replaceAll("\r", "") : ""
-                const cursor = cursorOffset()
-                if (!event.isComposing && cursor !== undefined) writeEditor(value, cursor)
                 local.onInput(value)
                 syncMention()
               }}
               onPaste={paste}
-              onClick={() => syncMention()}
-              onKeyUp={() => syncMention()}
+              onPointerUp={() => syncMention()}
+              onKeyUp={(event) => {
+                const selectAll =
+                  (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a"
+                if (!selectAll && !mentionCursorKeys.has(event.key)) return
+                syncMention()
+              }}
               onKeyDown={(e) => {
                 e.stopPropagation()
                 if (e.isComposing || e.keyCode === 229) return

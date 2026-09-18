@@ -196,6 +196,7 @@ function useFileViewer(config: ViewerConfig) {
     below: boolean
     gutterEdge: number
   }>()
+  const hasTextSelection = createMemo(() => textSelection() !== undefined)
 
   const getRoot = () => getViewerRoot(container)
   const getHost = () => getViewerHost(container)
@@ -425,7 +426,10 @@ function useFileViewer(config: ViewerConfig) {
     makeEventListener(container, "mousemove", handleMouseMove)
     makeEventListener(window, "mouseup", handleMouseUp)
     makeEventListener(document, "selectionchange", handleSelectionChange)
-    if (!config.textSelectionAction()) return
+  })
+
+  createEffect(() => {
+    if (!config.enableLineSelection() || !config.textSelectionAction() || !hasTextSelection()) return
     makeEventListener(document, "scroll", scheduleTextSelectionUpdate, true)
     makeEventListener(window, "resize", scheduleTextSelectionUpdate)
     makeEventListener(document, "keydown", (event) => {
