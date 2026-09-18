@@ -1,6 +1,7 @@
 import { CloseButton, Content, Description, Title } from "@kobalte/core/dialog"
 import { type ComponentProps, type JSXElement, type ParentProps, Show, children, splitProps } from "solid-js"
 import { useI18n } from "../../context/i18n"
+import { useDialogOptions } from "../../context/dialog"
 import "./dialog.css"
 
 export interface DialogProps extends ParentProps {
@@ -20,7 +21,7 @@ export interface DialogHeaderProps extends ParentProps {
 
 export interface DialogTitleGroupProps {
   title?: JSXElement
-  description: JSXElement
+  description?: JSXElement
 }
 
 export function DialogFooter(props: ParentProps) {
@@ -47,7 +48,7 @@ export function DialogTitleGroup(props: DialogTitleGroupProps) {
   return (
     <div data-slot="dialog-title-group">
       <Show when={title()}>{(t) => <Title data-slot="dialog-title">{t()}</Title>}</Show>
-      <Description data-slot="dialog-description">{description()}</Description>
+      <Show when={description()}>{(value) => <Description data-slot="dialog-description">{value()}</Description>}</Show>
     </div>
   )
 }
@@ -83,6 +84,7 @@ export function DialogHeader(props: DialogHeaderProps) {
 }
 
 export function Dialog(props: DialogProps) {
+  const options = useDialogOptions()
   const [local] = splitProps(props, [
     "size",
     "variant",
@@ -105,6 +107,9 @@ export function Dialog(props: DialogProps) {
         <Content
           data-slot="dialog-content"
           onCloseAutoFocus={local.onCloseAutoFocus}
+          onPointerDownOutside={(event) => {
+            if (options.dismissOnBackdrop === false) event.preventDefault()
+          }}
           classList={{
             ...local.classList,
             [local.class ?? ""]: !!local.class,

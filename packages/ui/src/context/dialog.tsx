@@ -17,6 +17,12 @@ import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
 
 type DialogElement = () => JSX.Element
+export type DialogOptions = { dismissOnBackdrop?: boolean }
+const DialogOptionsContext = createContext<DialogOptions>({})
+
+export function useDialogOptions() {
+  return useContext(DialogOptionsContext)
+}
 
 type Active = {
   id: string
@@ -75,7 +81,13 @@ function init() {
     makeEventListener(window, "keydown", onKeyDown, { capture: true })
   })
 
-  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
+  const mount = (
+    element: DialogElement,
+    owner: Owner,
+    onClose: (() => void) | undefined,
+    layer: number,
+    options: DialogOptions = {},
+  ) => {
     const id = Math.random().toString(36).slice(2)
     const zIndex = 50 + layer * 10
     let dispose: (() => void) | undefined
@@ -100,7 +112,10 @@ function init() {
               <Kobalte.Overlay
                 data-component="dialog-overlay"
                 style={{ "z-index": String(zIndex) }}
-                onClick={() => close(id)}
+                onClick={() => {
+                  if (options.dismissOnBackdrop === false) return
+                  close(id)
+                }}
               />
               <div
                 data-dialog-layer={layer}
@@ -114,7 +129,7 @@ function init() {
                   "pointer-events": "none",
                 }}
               >
-                {element()}
+                <DialogOptionsContext.Provider value={options}>{element()}</DialogOptionsContext.Provider>
               </div>
             </Kobalte.Portal>
           </Kobalte>
@@ -128,16 +143,16 @@ function init() {
     setStack((items) => [...items, active])
   }
 
-  const push = (element: DialogElement, owner: Owner, onClose?: () => void) => {
+  const push = (element: DialogElement, owner: Owner, onClose?: () => void, options?: DialogOptions) => {
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, stack().length)
+    mount(element, owner, onClose, stack().length, options)
   }
 
-  const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
+  const show = (element: DialogElement, owner: Owner, onClose?: () => void, options?: DialogOptions) => {
     for (const item of stack()) item.dispose()
     setStack([])
     if (timer.current !== undefined) {
@@ -145,7 +160,7 @@ function init() {
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, 0)
+    mount(element, owner, onClose, 0, options)
   }
 
   return {
@@ -183,13 +198,13 @@ export function useDialog() {
     get active() {
       return ctx.stack().at(-1)
     },
-    show(element: DialogElement, onClose?: () => void) {
+    show(element: DialogElement, onClose?: () => void, options?: DialogOptions) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.show(element, base, onClose))
+      return startTransition(() => ctx.show(element, base, onClose, options))
     },
-    push(element: DialogElement, onClose?: () => void) {
+    push(element: DialogElement, onClose?: () => void, options?: DialogOptions) {
       const base = ctx.stack().at(-1)?.owner ?? owner
-      return startTransition(() => ctx.push(element, base, onClose))
+      return startTransition(() => ctx.push(element, base, onClose, options))
     },
     close() {
       ctx.close()
