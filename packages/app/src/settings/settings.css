@@ -1093,8 +1093,8 @@
 }
 
 .settings-models-console-groups {
-  margin-inline-start: 10px;
-  padding-inline-start: 28px;
+  margin-inline-start: 14px;
+  padding-inline-start: 16px;
   border-inline-start: 0.5px solid var(--v2-border-border-base);
 }
 
