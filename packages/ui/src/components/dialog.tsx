@@ -37,6 +37,15 @@ export function Dialog(props: DialogProps) {
             if (autofocusEl) {
               e.preventDefault()
               autofocusEl.focus()
+              // A replaced dialog can restore its trigger after this dialog opens.
+              // Reapply autofocus once that teardown has finished, but only for the top layer.
+              requestAnimationFrame(() => {
+                if (!target?.isConnected || target.contains(target.ownerDocument.activeElement)) return
+                const layers = target.ownerDocument.querySelectorAll("[data-dialog-layer]")
+                const layer = target.closest("[data-dialog-layer]")
+                if (layer && layers.item(layers.length - 1) !== layer) return
+                autofocusEl.focus()
+              })
             }
           }}
         >
