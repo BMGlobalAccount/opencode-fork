@@ -272,11 +272,11 @@ export function createProviderConnectionController(options: {
       return
     }
     if (awaitAuthorization) {
+      const retrying = store.state === "error"
       setStore({
         selectingIndex: index,
         authorization: undefined,
-        state: undefined,
-        error: undefined,
+        ...(retrying ? {} : { state: undefined, error: undefined }),
         browserFailed: false,
         statusFailed: false,
       })

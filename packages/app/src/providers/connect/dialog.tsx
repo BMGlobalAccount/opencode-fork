@@ -1232,8 +1232,19 @@ function ProviderConnection(props: {
                     </span>
                   </div>
                   <Show when={desktopConsole}>
-                    <Button class="mt-4" onClick={() => void controller.auth.retry()}>
-                      {language.t("provider.connect.console.retry")}
+                    <Button
+                      class="mt-4"
+                      disabled={controller.selecting(controller.methodIndex() ?? -1)}
+                      aria-busy={controller.selecting(controller.methodIndex() ?? -1)}
+                      onClick={() => void controller.auth.retry()}
+                    >
+                      <Show
+                        when={controller.selecting(controller.methodIndex() ?? -1)}
+                        fallback={language.t("provider.connect.console.retry")}
+                      >
+                        <Loader />
+                        {language.t("provider.connect.console.openingBrowser")}
+                      </Show>
                     </Button>
                   </Show>
                 </div>

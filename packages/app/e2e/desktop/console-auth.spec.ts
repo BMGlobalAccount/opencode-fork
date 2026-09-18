@@ -82,6 +82,8 @@ async function fixture(
     models: true,
     modelError: false,
     statusError: false,
+    startError: false,
+    startGate: options.slowStart,
   }
   const server = remote ? "http://production.example:4096" : undefined
   const currentIntegration = () => ({
@@ -124,7 +126,8 @@ async function fixture(
         answer: { server: "https://opencode.ai/console" },
       })
       state.starts++
-      if (options.slowStart) await options.slowStart
+      if (state.startGate) await state.startGate
+      if (state.startError) return route.fulfill({ status: 503, headers })
       return json({
         attemptID: `con_${state.starts}`,
         mode: "auto",
@@ -474,6 +477,27 @@ test("status request failure resumes the existing attempt", async ({ page }) => 
   await expect(dialog.getByRole("heading", { name: "Connected to OpenCode Console" })).toBeVisible()
   expect(state.starts).toBe(1)
   expect(state.cancelled).toEqual([])
+})
+
+test("retrying authorization startup keeps the error view busy", async ({ page }) => {
+  const { state, dialog } = await fixture(page)
+  state.startError = true
+  await dialog.getByRole("button", { name: "Continue with OpenCode Console" }).click()
+  const alert = dialog.getByRole("alert")
+  await expect(alert).toContainText("Couldn't start sign-in")
+
+  const retry = Promise.withResolvers<void>()
+  state.startError = false
+  state.startGate = retry.promise
+  await dialog.getByRole("button", { name: "Try again", exact: true }).click()
+  const opening = dialog.getByRole("button", { name: "Opening browser…", exact: true })
+  await expect(opening).toBeDisabled()
+  await expect(alert).toContainText("Couldn't start sign-in")
+
+  const popup = page.waitForEvent("popup")
+  retry.resolve()
+  await popup
+  await expect(dialog.getByRole("group", { name: "Device code: TFXS-STXG" })).toBeVisible()
 })
 
 test("closing during authorization startup cancels the late server attempt", async ({ page }) => {
