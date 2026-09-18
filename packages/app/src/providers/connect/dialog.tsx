@@ -31,7 +31,7 @@ import { consoleProviderGroup, consoleProviderName } from "@/providers/catalog/c
 import { useIntegrations } from "@/providers/catalog/integrations"
 import { CustomProviderForm } from "@/providers/credentials/dialog"
 import { decode64 } from "@/runtime/persistence/base64"
-import { createProviderConnectionController, type ProviderConnectMethod } from "./controller"
+import { createProviderConnectionController, providerFormDefaults, type ProviderConnectMethod } from "./controller"
 import { ConsoleAuthorization } from "./console"
 import { OpenCodeLogo } from "@/providers/opencode-logo"
 import { usePlatform } from "@/runtime/platform/platform"
@@ -521,14 +521,18 @@ function ProviderConnection(props: {
   }
 
   function AuthFormView() {
+    const defaults = providerFormDefaults(controller.currentMethod()?.form)
     const [formStore, setFormStore] = createStore({
-      value: {} as Record<string, string>,
+      value: Object.entries(defaults).reduce<Record<string, string>>((values, [key, value]) => {
+        if (typeof value === "string") values[key] = value
+        return values
+      }, {}),
       index: 0,
     })
 
     const fields = createMemo<StringForm[]>(() => {
       const value = controller.currentMethod()
-      return (value?.form ?? []).flatMap((field) => (field.type === "string" ? [field] : []))
+      return (value?.form ?? []).flatMap((field) => (field.type === "string" && !field.hidden ? [field] : []))
     })
     const matches = (field: StringForm, value: Record<string, string>) => {
       return (field.when ?? []).every((condition) => {

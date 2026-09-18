@@ -45,7 +45,20 @@ const integration = {
   name: "OpenCode",
   connections: [],
   methods: [
-    { id: "device", type: "oauth", label: "OpenCode Console account" },
+    {
+      id: "device",
+      type: "oauth",
+      label: "OpenCode Console account",
+      form: [
+        {
+          key: "server",
+          type: "string",
+          format: "uri",
+          hidden: true,
+          default: "https://opencode.ai/console",
+        },
+      ],
+    },
     { type: "key", label: "API key (service account)" },
   ],
 }
@@ -105,7 +118,10 @@ async function fixture(
     if (path === "/api/integration") return json([currentIntegration()])
     if (path === "/api/integration/opencode") return json(currentIntegration())
     if (path === "/api/integration/opencode/connect/oauth") {
-      expect(request.postDataJSON()).toEqual({ methodID: "device" })
+      expect(request.postDataJSON()).toEqual({
+        methodID: "device",
+        answer: { server: "https://opencode.ai/console" },
+      })
       state.starts++
       if (options.slowStart) await options.slowStart
       return json({

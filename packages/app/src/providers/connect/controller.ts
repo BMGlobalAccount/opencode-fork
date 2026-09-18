@@ -9,6 +9,22 @@ import { createStore, produce } from "solid-js/store"
 export type ProviderConnectMethod = Extract<IntegrationMethod, { type: "key" | "oauth" }>
 type Authorization = IntegrationOauthConnectOutput["data"]
 
+export function providerFormDefaults(fields: ProviderConnectMethod["form"]) {
+  return (fields ?? []).reduce<FormAnswer>((answer, field) => {
+    if (field.type === "external" || !field.hidden || field.default === undefined) return answer
+    const active = (field.when ?? []).every((condition) => {
+      const actual = answer[condition.key]
+      if (actual === undefined) return false
+      const equal = Array.isArray(actual)
+        ? typeof condition.value === "string" && actual.includes(condition.value)
+        : actual === condition.value
+      return condition.op === "eq" ? equal : !equal
+    })
+    if (!active) return answer
+    return { ...answer, [field.key]: field.default }
+  }, {})
+}
+
 export function createProviderConnectionController(options: {
   provider: () => string
   directory: () => string | undefined
@@ -237,9 +253,12 @@ export function createProviderConnectionController(options: {
     cancelAttempt()
     const generation = polling.generation
     const selected = methods()[index]
+    const defaults = providerFormDefaults(selected.form)
+    const resolvedAnswer = answer ? { ...defaults, ...answer } : defaults
     const awaitAuthorization = desktopConsole && selected.type === "oauth" && selected.id === "device"
     if (!awaitAuthorization) dispatch({ type: "method.select", index })
-    if (selected.form?.length && !answer) {
+    if (selected.form?.some((field) => field.type === "external" || !field.hidden) && !answer) {
+      if (awaitAuthorization) dispatch({ type: "method.select", index })
       dispatch({ type: "auth.form" })
       return
     }
@@ -268,7 +287,7 @@ export function createProviderConnectionController(options: {
       .connect({
         integrationID,
         methodID: selected.id,
-        ...(answer ? { answer } : {}),
+        ...(Object.keys(resolvedAnswer).length > 0 ? { answer: resolvedAnswer } : {}),
         location: location(),
       })
       .then((response) => {
