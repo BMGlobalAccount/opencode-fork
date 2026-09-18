@@ -96,6 +96,7 @@ async function fixture(
 ) {
   const state = {
     status: "pending",
+    connected: false,
     starts: 0,
     cancelled: [] as string[],
     models: true,
@@ -109,7 +110,7 @@ async function fixture(
   const currentIntegration = () => ({
     ...integration,
     connections:
-      state.status === "complete" && !options.staleIntegration
+      state.connected && !options.staleIntegration
         ? [{ type: "credential", id: "cred_console", label: "Anomaly" }]
         : [],
   })
@@ -161,6 +162,7 @@ async function fixture(
         return route.fulfill({ status: 204, headers })
       }
       if (state.statusError) return route.fulfill({ status: 503, headers })
+      if (state.status === "complete") state.connected = true
       return json({
         status: state.status,
         ...(state.status === "failed" ? { message: "Device authorization failed: access_denied" } : {}),
@@ -175,23 +177,22 @@ async function fixture(
       headers: { "access-control-allow-origin": "*" },
       json: {
         location,
-        data:
-          state.status !== "complete"
-            ? options.existingProvider
-              ? [directProvider]
-              : []
-            : state.catalogReady
-              ? [provider, ...(options.singleProvider ? [] : [secondProvider])].concat(
-                  options.directProvider || options.existingProvider ? [directProvider] : [],
-                )
-              : [{ ...provider, name: "OpenCode" }],
+        data: !state.connected
+          ? options.existingProvider
+            ? [directProvider]
+            : []
+          : state.catalogReady
+            ? [provider, ...(options.singleProvider ? [] : [secondProvider])].concat(
+                options.directProvider || options.existingProvider ? [directProvider] : [],
+              )
+            : [{ ...provider, name: "OpenCode" }],
       },
     })
   })
   await page.route("**/api/model**", (route) => {
     if (route.request().method() === "OPTIONS") return route.fallback()
     if (state.modelError) return route.fulfill({ status: 503, headers: { "access-control-allow-origin": "*" } })
-    const available = state.status === "complete" && state.models
+    const available = state.connected && state.models
     const source = options.directProvider || options.existingProvider ? [...models, directModel] : models
     const catalog = options.paidModels
       ? source.map((model) => ({ ...model, cost: [{ input: 1, output: 1, cache: { read: 0, write: 0 } }] }))
@@ -214,6 +215,24 @@ async function fixture(
               ? [directModel]
               : [],
       },
+    })
+  })
+  await page.route("**/api/credential/**", async (route) => {
+    if (route.request().method() !== "DELETE") return route.fallback()
+    state.connected = false
+    state.status = "pending"
+    await route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } })
+    await page.evaluate(() => {
+      const host = window as Window & { __mockServerStream?: { push: (events: unknown[]) => void } }
+      if (!host.__mockServerStream) throw new Error("Missing fixture event stream")
+      host.__mockServerStream.push([
+        { id: "evt_credential_removed", type: "credential.updated", data: {} },
+        {
+          id: "evt_credential_switched",
+          type: "credential.switched",
+          data: { integrationID: "opencode", credentialID: null },
+        },
+      ])
     })
   })
   await page.addInitScript(
@@ -501,6 +520,33 @@ test("model choice is skipped after a provider has already been connected", asyn
       return cardBox.y >= searchBox.y + searchBox.height + 20
     })
     .toBe(true)
+})
+
+test("Console reconnect clears disconnected provider suppression", async ({ page }) => {
+  const { state, dialog } = await fixture(page)
+  await dialog.getByRole("button", { name: "Continue to OpenCode Console" }).click()
+  await expect(dialog.getByRole("group", { name: "Device code: TFXS-STXG" })).toBeVisible()
+  state.status = "complete"
+  await expect(dialog.getByRole("heading", { name: "Connected to OpenCode Console" })).toBeVisible()
+  await dialog.getByRole("button", { name: "Close", exact: true }).click()
+
+  const connected = page.locator('[data-component="connected-providers-section"]')
+  await expect(connected.getByText("OpenCode", { exact: true })).toBeVisible()
+  await connected.getByRole("button", { name: "Disconnect", exact: true }).click()
+  await expect(connected).toContainText("No connected providers")
+  const popular = page.getByRole("heading", { name: "Popular providers", exact: true }).locator("..")
+  await expect(popular.getByRole("button", { name: "Connect", exact: true })).toBeVisible()
+
+  await page.getByRole("button", { name: "Show more providers", exact: true }).click()
+  await dialog.getByRole("button", { name: /^OpenCode / }).click()
+  await dialog.getByRole("button", { name: "Continue to OpenCode Console" }).click()
+  await expect(dialog.getByRole("group", { name: "Device code: TFXS-STXG" })).toBeVisible()
+  state.status = "complete"
+  await expect(dialog.getByRole("heading", { name: "Connected to OpenCode Console" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(dialog).toBeHidden()
+  await expect(connected.getByText("OpenCode", { exact: true })).toBeVisible()
+  await expect(connected.getByText("Anomaly", { exact: true })).toBeVisible()
 })
 
 test("service-account API key form matches the Console dialog layout", async ({ page }) => {

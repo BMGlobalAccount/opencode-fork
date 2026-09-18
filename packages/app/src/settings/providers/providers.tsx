@@ -9,7 +9,7 @@ import { popularProviders, useProviders } from "@/providers/catalog/providers"
 import { consoleProviderGroup } from "@/providers/catalog/console"
 import { useIntegrations } from "@/providers/catalog/integrations"
 import { createEffect, createMemo, type Component, For, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, reconcile } from "solid-js/store"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useServerSDK } from "@/runtime/server/client"
 import { useData } from "@/runtime/server/current"
@@ -46,10 +46,10 @@ export const SettingsProviders: Component<{
   const integrations = useIntegrations(() => props.directory)
   const providerConnect = useProviderConnectController({ onBack: props.onBack })
   const [state, setState] = createStore({
-    disconnecting: {} as Record<string, "removing" | "removed" | undefined>,
+    disconnecting: {} as Record<string, "removing" | "removed" | "absent" | undefined>,
     consoleExpanded: false,
   })
-  const updateDisconnecting = (ids: string[], status: "removing" | "removed" | undefined) =>
+  const updateDisconnecting = (ids: string[], status: "removing" | "removed" | "absent" | undefined) =>
     setState("disconnecting", (current) => ({
       ...current,
       ...Object.fromEntries(ids.map((id) => [id, status])),
@@ -64,11 +64,13 @@ export const SettingsProviders: Component<{
           directory={props.directory}
           defaultLocation={props.directory === undefined}
           controller={providerConnect}
-          onConnected={(providerID) =>
-            setState("disconnecting", (current) =>
-              providerID === "opencode" ? {} : { ...current, [providerID]: undefined },
-            )
-          }
+          onConnected={(providerID) => {
+            if (providerID === "opencode") {
+              setState("disconnecting", reconcile({}))
+              return
+            }
+            setState("disconnecting", providerID, undefined)
+          }}
         />
       ),
       () => {
@@ -107,7 +109,11 @@ export const SettingsProviders: Component<{
   createEffect(() => {
     const ids = new Set(available().map((item) => item.id))
     Object.entries(state.disconnecting).forEach(([id, status]) => {
-      if (status === "removing" && !ids.has(id)) setState("disconnecting", id, "removed")
+      if ((status === "removing" || status === "removed") && !ids.has(id)) {
+        setState("disconnecting", id, "absent")
+        return
+      }
+      if (status === "absent" && ids.has(id)) setState("disconnecting", id, undefined)
     })
   })
 
