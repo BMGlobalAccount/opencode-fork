@@ -63,6 +63,29 @@ export function createHoverCommentUtility(props: {
     props.onSelect(next)
   }
 
+  const startLineSelection = (event: PointerEvent) => {
+    const number = button.parentElement?.assignedSlot?.parentElement?.parentElement
+    if (!(number instanceof HTMLElement)) return
+    number.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        isPrimary: event.isPrimary,
+        button: event.button,
+        buttons: event.buttons,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        altKey: event.altKey,
+      }),
+    )
+  }
+
   document.addEventListener("pointermove", onHoverInvalidated, { passive: true })
   document.addEventListener("scroll", onHoverInvalidated, { passive: true, capture: true })
   button.addEventListener("mouseenter", sync)
@@ -71,6 +94,7 @@ export function createHoverCommentUtility(props: {
     event.preventDefault()
     event.stopPropagation()
     sync()
+    startLineSelection(event)
   })
   button.addEventListener("mousedown", (event) => {
     event.preventDefault()
