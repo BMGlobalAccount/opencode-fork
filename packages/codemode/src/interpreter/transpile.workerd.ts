@@ -8,4 +8,4 @@ export interface TranspileResult {
 // untranspiled. Plain-JS programs (the overwhelmingly common case) parse
 // fine downstream via acorn; TypeScript-only syntax surfaces as a parse
 // error from the interpreter instead of a transpile diagnostic.
-export const transpile = (source: string): TranspileResult => ({ outputText: source })
+export const transpile = async (source: string): Promise<TranspileResult> => ({ outputText: source })

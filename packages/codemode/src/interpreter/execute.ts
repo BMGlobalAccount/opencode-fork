@@ -40,7 +40,7 @@ export const executeProgram = <R>(
       Scope.make("parallel"),
       (scope) =>
         Effect.gen(function* () {
-          const program = parseProgram(code)
+          const program = yield* Effect.promise(() => parseProgram(code))
           const pending = new Pending<R>(scope, builtins.Promise)
           const ctx = new Interpreter<R>({ tools, pending, builtins, logs, globals })
           const result = (yield* toBoundary(ctx, yield* ctx.run(program))) ?? null
@@ -109,8 +109,8 @@ export const executeProgram = <R>(
   })
 }
 
-const parseProgram = (code: string): Program => {
-  const transpiled = transpile(`async function __codemode__() {\n${code}\n}`)
+const parseProgram = async (code: string): Promise<Program> => {
+  const transpiled = await transpile(`async function __codemode__() {\n${code}\n}`)
 
   if (transpiled.error !== undefined) {
     throw new PendingThrow("SyntaxError", `Failed to parse TypeScript: ${transpiled.error}`, undefined, "ParseError")
