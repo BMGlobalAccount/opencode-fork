@@ -40,7 +40,7 @@ describe("desktop attachment files", () => {
   })
   test("reads selected files sequentially and releases the token", async () => {
     const events: string[] = []
-    const files = createDesktopFiles(fileApi(events), "windows", ["txt"])
+    const files = createDesktopFiles(fileApi(events), "windows")
 
     await files.openAttachmentPickerDialog({}, async (file) => {
       events.push(`file:${file.name}`)
@@ -57,7 +57,7 @@ describe("desktop attachment files", () => {
 
   test("releases the token when a selected file callback fails", async () => {
     const events: string[] = []
-    const files = createDesktopFiles(fileApi(events), "windows", ["txt"])
+    const files = createDesktopFiles(fileApi(events), "windows")
 
     await expect(
       files.openAttachmentPickerDialog({}, async () => {
@@ -69,7 +69,7 @@ describe("desktop attachment files", () => {
 
   test("writes clipboard text through the native desktop API", async () => {
     const events: string[] = []
-    const files = createDesktopFiles(fileApi(events), "windows", ["txt"])
+    const files = createDesktopFiles(fileApi(events), "windows")
 
     await files.writeClipboardText("ses_123")
 
