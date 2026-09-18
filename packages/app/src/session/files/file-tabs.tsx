@@ -15,7 +15,13 @@ import { Menu } from "@opencode/ui/menu"
 import { Tabs } from "@opencode/ui/tabs"
 import { ScrollView } from "@opencode/ui/scroll-view"
 import { showToast } from "@/shell/notifications/toast"
-import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/workspaces/files/model"
+import {
+  selectionFromLines,
+  useFile,
+  type FileSelection,
+  type FileState,
+  type SelectedLineRange,
+} from "@/workspaces/files/model"
 import { useComments } from "@/composer/comments"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useComposerState } from "@/composer/persistence"
@@ -206,8 +212,20 @@ export function SessionFileView(props: SessionFileViewProps) {
 
   const path = createMemo(() => file.pathFromTab(props.tab))
   const markdown = createMemo(() => path()?.toLowerCase().endsWith(".md") ?? false)
+  const imageBase = (value: string) => value.replaceAll("\\", "/").split("/").slice(0, -1).join("/")
   const absolutePath = createMemo(() => resolveOpenInAppPath(location().directory, path() ?? ""))
-  const [display, setDisplay] = createStore({ markdown: "rendered" as "rendered" | "source" })
+  const [display, setDisplay] = createStore({
+    markdown: "rendered" as "rendered" | "source",
+    file: undefined as
+      | {
+          path: string
+          contents: string
+          cacheKey: string | undefined
+          markdown: boolean
+          content: NonNullable<FileState["content"]>
+        }
+      | undefined,
+  })
   const state = createMemo(() => {
     const p = path()
     if (!p) return
@@ -215,6 +233,18 @@ export function SessionFileView(props: SessionFileViewProps) {
   })
   const contents = createMemo(() => state()?.content?.content ?? "")
   const cacheKey = createMemo(() => sampledChecksum(contents()))
+  createEffect(() => {
+    const value = state()
+    const p = path()
+    if (!p || !value?.loaded || !value.content) return
+    setDisplay("file", {
+      path: p,
+      contents: value.content.content,
+      cacheKey: sampledChecksum(value.content.content),
+      markdown: p.toLowerCase().endsWith(".md"),
+      content: value.content,
+    })
+  })
   const selectedLines = createMemo<SelectedLineRange | null>(() => {
     const p = path()
     if (!p) return null
@@ -407,26 +437,29 @@ export function SessionFileView(props: SessionFileViewProps) {
     scrollSync.queueRestore()
   })
 
-  const renderFile = (source: string) => (
+  const renderFile = (
+    value: { path: string; contents: string; cacheKey: string | undefined; content: NonNullable<FileState["content"]> },
+    interactive = true,
+  ) => (
     <div class="relative overflow-hidden pb-40">
       <Dynamic
         component={fileComponent}
         mode="text"
         file={{
-          name: path() ?? "",
-          contents: source,
-          cacheKey: cacheKey(),
+          name: value.path,
+          contents: value.contents,
+          cacheKey: value.cacheKey,
         }}
-        enableLineSelection
-        enableGutterUtility
-        selectedLines={activeSelection()}
-        commentedLines={commentedLines()}
+        enableLineSelection={interactive}
+        enableGutterUtility={interactive}
+        selectedLines={interactive ? activeSelection() : null}
+        commentedLines={interactive ? commentedLines() : []}
         onRendered={() => {
           scrollSync.queueRestore()
         }}
-        annotations={commentsUi.annotations()}
-        renderAnnotation={commentsUi.renderAnnotation}
-        renderGutterUtility={commentsUi.renderGutterUtility}
+        annotations={interactive ? commentsUi.annotations() : []}
+        renderAnnotation={interactive ? commentsUi.renderAnnotation : undefined}
+        renderGutterUtility={interactive ? commentsUi.renderGutterUtility : undefined}
         onLineSelected={(range: SelectedLineRange | null) => {
           commentsUi.onLineSelected(range)
         }}
@@ -441,12 +474,12 @@ export function SessionFileView(props: SessionFileViewProps) {
         onLineNumberSelectionEnd={(range: SelectedLineRange | null) => {
           commentsUi.onLineNumberSelectionEnd(range)
         }}
-        search={search}
+        search={interactive ? search : undefined}
         class="select-text"
         media={{
           mode: "auto",
-          path: path(),
-          current: state()?.content,
+          path: value.path,
+          current: value.content,
           onLoad: scrollSync.queueRestore,
           onError: (args: { kind: "image" | "audio" | "svg" }) => {
             if (args.kind !== "svg") return
@@ -475,7 +508,7 @@ export function SessionFileView(props: SessionFileViewProps) {
               <Show when={markdown()}>
                 <Button
                   size="small"
-                  variant="neutral"
+                  variant="ghost"
                   class="min-w-[112px]"
                   onClick={() => setDisplay("markdown", display.markdown === "rendered" ? "source" : "rendered")}
                 >
@@ -493,13 +526,31 @@ export function SessionFileView(props: SessionFileViewProps) {
       </Show>
       <ScrollView class="flex-1 min-h-0" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll}>
         <Switch>
+          <Match when={state()?.loading && display.file ? display.file : undefined}>
+            {(value) => (
+              <div data-slot="session-file-loading-preview" aria-busy="true" class="opacity-50 pointer-events-none">
+                {value().markdown && display.markdown === "rendered" ? (
+                  <div class="px-6 py-4 pb-40">
+                    <Markdown
+                      text={value().contents}
+                      cacheKey={value().cacheKey}
+                      imageBase={imageBase(value().path)}
+                      deferUntilReady
+                    />
+                  </div>
+                ) : (
+                  renderFile(value(), false)
+                )}
+              </div>
+            )}
+          </Match>
           <Match when={state()?.loaded}>
             {markdown() && display.markdown === "rendered" ? (
               <div class="px-6 py-4 pb-40">
-                <Markdown text={contents()} cacheKey={cacheKey()} />
+                <Markdown text={contents()} cacheKey={cacheKey()} imageBase={imageBase(path() ?? "")} deferUntilReady />
               </div>
             ) : (
-              renderFile(contents())
+              renderFile({ path: path() ?? "", contents: contents(), cacheKey: cacheKey(), content: state()!.content! })
             )}
           </Match>
           <Match when={state()?.loading}>
