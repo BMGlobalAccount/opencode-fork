@@ -203,7 +203,7 @@ async function fixture(
     const tip = page.locator('[data-component="new-session-tip"]')
     await expect(tip).toContainText("Connect to 75+ providers")
     await tip.getByRole("button", { name: /Connect to 75\+ providers/ }).click()
-    await dialog.getByRole("button", { name: /^OpenCode Console / }).click()
+    await dialog.getByRole("button", { name: /^OpenCode / }).click()
     await dialog.getByRole("button", { name: "Continue with OpenCode Console" }).click()
     await expect(dialog.getByRole("group", { name: "Device code: TFXS-STXG" })).toBeVisible()
     return { state, dialog }
@@ -464,7 +464,10 @@ test("status request failure resumes the existing attempt", async ({ page }) => 
   const { state, dialog } = await fixture(page)
   state.statusError = true
   await dialog.getByRole("button", { name: "Continue with OpenCode Console" }).click()
-  await expect(dialog.getByRole("alert")).toBeVisible()
+  const alert = dialog.getByRole("alert")
+  await expect(alert).toBeVisible()
+  await expect(alert).toHaveClass(/text-v2-text-text-base/)
+  await expect(alert.locator("svg")).toHaveClass(/text-v2-state-fg-danger/)
   state.statusError = false
   state.status = "complete"
   await dialog.getByRole("button", { name: "Try again", exact: true }).click()

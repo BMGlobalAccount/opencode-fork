@@ -196,9 +196,7 @@ function ProviderPicker(props: { directory?: string; onSelect: (provider: string
   const all = createMemo(() => {
     language.locale()
     const query = store.filter.trim().toLowerCase()
-    const values = [custom(), ...integrations.list()].map((provider) =>
-      provider.id === "opencode" ? { ...provider, name: language.t("provider.connect.console.name") } : provider,
-    )
+    const values = [custom(), ...integrations.list()]
     if (!query) return values
     return values.filter((provider) => `${provider.id} ${provider.name}`.toLowerCase().includes(query))
   })
@@ -1224,9 +1222,9 @@ function ProviderConnection(props: {
                 <AuthFormView />
               </Match>
               <Match when={controller.auth.state() === "error"}>
-                <div class="text-14-regular text-text-base" role="alert">
+                <div class="text-14-regular text-v2-text-text-base" role="alert">
                   <div class="flex items-center gap-x-2">
-                    <Icon name="circle-ban-sign" class="text-icon-critical-base" />
+                    <Icon name="circle-ban-sign" class="text-v2-state-fg-danger" />
                     <span>
                       {desktopConsole
                         ? controller.auth.error()
