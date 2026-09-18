@@ -43,6 +43,8 @@ export default Plugin.define({
       append: "app",
       render() {
         const toast = useToast()
+        // Dialogs render beside PluginProvider, so Answer cannot call usePlugin().
+        const plugins = usePlugin()
         context.keymap.layer(() => ({
           mode: "global",
           commands: [
@@ -66,7 +68,9 @@ export default Plugin.define({
                 await context.client.session
                   .generate({ sessionID: route.sessionID, prompt: [instructions, question].join("\n\n") })
                   .then((result) => {
-                    context.ui.dialog.show(() => <Answer question={question} answer={result.text.trim()} />)
+                    context.ui.dialog.show(() => (
+                      <Answer question={question} answer={result.text.trim()} markdown={plugins.markdown} />
+                    ))
                     context.ui.dialog.set({ size: "large", centered: true })
                   })
                   .catch((cause: unknown) => toast.error(cause))
@@ -81,13 +85,16 @@ export default Plugin.define({
   },
 })
 
-function Answer(props: { question: string; answer: string }) {
+export function Answer(props: {
+  question: string
+  answer: string
+  markdown: ReturnType<typeof usePlugin>["markdown"]
+}) {
   const dialog = useDialog()
   const toast = useToast()
   const clipboard = useClipboard()
-  const plugins = usePlugin()
-  const theme = useTheme("elevated")
-  const overlay = useTheme("overlay")
+  const theme = useTheme().surface("dialog")
+  const overlay = useTheme()
   const syntax = useThemes().currentSyntax
   const config = useConfig().data
   const [copied, setCopied] = createSignal(false)
@@ -119,15 +126,15 @@ function Answer(props: { question: string; answer: string }) {
     <box gap={1}>
       <box paddingLeft={2} paddingRight={2}>
         <box flexDirection="row" justifyContent="space-between">
-          <text attributes={TextAttributes.BOLD} fg={theme.text.default}>
+          <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
             /btw
           </text>
-          <text fg={theme.text.subdued} onMouseUp={() => dialog.clear()}>
+          <text fg={theme.text.muted} onMouseUp={() => dialog.clear()}>
             esc
           </text>
         </box>
         <box paddingTop={1}>
-          <text fg={theme.text.subdued} wrapMode="word">
+          <text fg={theme.text.muted} wrapMode="word">
             {props.question}
           </text>
         </box>
@@ -135,31 +142,31 @@ function Answer(props: { question: string; answer: string }) {
       <scrollbox
         ref={(element: ScrollBoxRenderable) => (scroll = element)}
         maxHeight={20}
-        backgroundColor={overlay.background.default}
+        backgroundColor={overlay.background.raised.high}
         scrollbarOptions={{ visible: false }}
         scrollAcceleration={getScrollAcceleration(config)}
       >
         <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1}>
           <markdown
             syntaxStyle={syntax()}
-            renderNode={plugins.markdown()}
+            renderNode={props.markdown()}
             content={props.answer}
             conceal
             internalBlockMode="top-level"
             tableOptions={{ style: "grid", cellPaddingX: 1 }}
             fg={overlay.markdown.text}
-            bg={overlay.background.default}
+            bg={overlay.background.raised.high}
           />
         </box>
       </scrollbox>
       <box flexDirection="row" gap={3} paddingLeft={2} paddingRight={2} paddingBottom={1}>
         <text onMouseUp={copy}>
-          <span style={{ fg: copied() ? theme.text.feedback.success.default : theme.text.default }}>
+          <span style={{ fg: copied() ? theme.text.feedback.success.base : theme.text.base }}>
             <b>{copied() ? "✓ copied" : "c"}</b>
           </span>
-          <span style={{ fg: theme.text.subdued }}>{copied() ? "" : " copy"}</span>
+          <span style={{ fg: theme.text.muted }}>{copied() ? "" : " copy"}</span>
         </text>
-        <text fg={theme.text.subdued}>↑/↓ scroll</text>
+        <text fg={theme.text.muted}>↑/↓ scroll</text>
       </box>
     </box>
   )
