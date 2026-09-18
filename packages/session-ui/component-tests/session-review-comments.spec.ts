@@ -60,7 +60,11 @@ for (const direction of ["ltr", "rtl"]) {
     await expect(root.getByRole("textbox")).not.toBeVisible()
 
     await expect(action).toHaveAttribute("data-variant", "submit")
+    await expect(action).toHaveCSS("z-index", "110")
     const box = await action.boundingBox()
+    const code = root.locator("[data-code]").first()
+    const gutterRight = await code.evaluate((element) => element.firstElementChild?.getBoundingClientRect().right)
+    expect((box?.x ?? 0) - (gutterRight ?? 0)).toBe(8)
     expect(box?.x).toBeGreaterThanOrEqual(0)
     expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(
       await page.evaluate(() => document.documentElement.clientWidth),
@@ -74,6 +78,69 @@ for (const direction of ["ltr", "rtl"]) {
       /.*/,
     )
   })
+}
+
+for (const direction of ["up", "down"] as const) {
+  story(
+    `positions the comment action with ${direction === "up" ? "an upward" : "a downward"} selection`,
+    async ({ mount, page }) => {
+      const root = await mount("components-session-review--interactive-comments-panel")
+      const action = page.getByRole("button", { name: "Add comment", exact: true })
+      await expect(async () => {
+        await root.getByText("export const first = 1", { exact: true }).evaluate((element, value) => {
+          const root = element.getRootNode()
+          if (!(root instanceof ShadowRoot)) throw new Error("Expected a shadow root")
+          const text = (line: number) => {
+            const row = root.querySelector(`[data-line="${line}"]`)
+            if (!row) throw new Error(`Missing line ${line}`)
+            const node = document.createTreeWalker(row, NodeFilter.SHOW_TEXT).nextNode()
+            if (!node) throw new Error(`Missing text for line ${line}`)
+            return node
+          }
+          const first = text(1)
+          const last = text(3)
+          const selection = window.getSelection()
+          if (!selection) throw new Error("Missing selection")
+          if (value === "up") {
+            selection.setBaseAndExtent(last, last.textContent?.length ?? 0, first, 0)
+          } else {
+            selection.setBaseAndExtent(first, 0, last, last.textContent?.length ?? 0)
+          }
+          document.dispatchEvent(new Event("selectionchange"))
+        }, direction)
+        await expect(action).toHaveAttribute("data-placement", direction === "up" ? "top" : "bottom")
+        await expect(action).toHaveClass(/transition-transform/)
+        await expect(action).toHaveClass(/ease-out/)
+        await expect(action).not.toHaveClass(/fade-in/)
+        await expect
+          .poll(() =>
+            action.evaluate((button) => {
+              const host = button.closest('[data-component="file"]')?.querySelector("diffs-container")
+              const root = host?.shadowRoot
+              if (!root) return NaN
+              const selection =
+                (root as unknown as { getSelection?: () => Selection | null }).getSelection?.() ??
+                window.getSelection()
+              const source = (
+                selection as unknown as {
+                  getComposedRanges?: (options: { shadowRoots: ShadowRoot[] }) => StaticRange[]
+                }
+              )?.getComposedRanges?.({ shadowRoots: [root] })?.[0]
+              if (!source) return NaN
+              const range = new Range()
+              range.setStart(source.startContainer, source.startOffset)
+              range.setEnd(source.endContainer, source.endOffset)
+              const selected = range.getBoundingClientRect()
+              const action = button.getBoundingClientRect()
+              return button.getAttribute("data-placement") === "top"
+                ? selected.top - action.bottom
+                : action.top - selected.bottom
+            }),
+          )
+          .toBeCloseTo(8, 0)
+      }).toPass()
+    },
+  )
 }
 
 story("leaves a review code click as regular text interaction", async ({ mount }) => {
@@ -99,7 +166,14 @@ story("keeps the direct gutter comment action in the review panel", async ({ mou
   expect(await comment.evaluate((element) => (element as HTMLElement).style.background)).toBe(
     "var(--v2-background-bg-inverse)",
   )
-  expect(await comment.evaluate((element) => (element as HTMLElement).style.left)).toBe("24px")
+  expect(await comment.evaluate((element) => (element as HTMLElement).style.left)).toBe("28px")
+  await expect(comment).toHaveCSS("z-index", "110")
+  const box = await comment.boundingBox()
+  const gutterRight = await root
+    .locator("[data-code]")
+    .first()
+    .evaluate((element) => element.firstElementChild?.getBoundingClientRect().right)
+  expect((box?.x ?? 0) - (gutterRight ?? 0)).toBe(8)
   await comment.dispatchEvent("click")
   await expect(root.getByRole("textbox")).toBeVisible()
   await expect(root.locator('[data-line="1"]')).toHaveAttribute("data-selected-line", /.*/)

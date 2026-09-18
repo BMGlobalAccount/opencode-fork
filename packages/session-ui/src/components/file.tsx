@@ -22,12 +22,11 @@ import { createMediaQuery } from "@solid-primitives/media"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { ComponentProps, createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps } from "solid-js"
 import { Button } from "@opencode/ui/button"
-import { Portal } from "solid-js/web"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
 import { fixDiffSelection, findDiffSide, type DiffSelectionSide } from "../pierre/diff-selection"
 import { createFileFind } from "../pierre/file-find"
-import { LINE_COMMENT_ACTION_OFFSET } from "../pierre/comment-hover"
+import { LINE_COMMENT_ACTION_GAP } from "../pierre/comment-hover"
 import {
   applyViewerScheme,
   clearReadyWatcher,
@@ -51,6 +50,8 @@ import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
 
 const VIRTUALIZE_BYTES = 500_000
+const TEXT_SELECTION_ACTION_HEIGHT = 24
+const TEXT_SELECTION_ACTION_GAP = 8
 
 const codeMetrics = {
   ...DEFAULT_VIRTUAL_FILE_METRICS,
@@ -156,7 +157,14 @@ type ViewerConfig = {
   lineFromMouseEvent: (event: MouseEvent) => MouseHit
   setSelectedLines: (range: SelectedLineRange | null, preserve?: { root: ShadowRoot; text: Range }) => void
   updateSelection: (preserveTextSelection: boolean) => void
-  readTextSelection: () => { range: SelectedLineRange; text: Range } | undefined
+  readTextSelection: () =>
+    | {
+        range: SelectedLineRange
+        text: Range
+        direction: "up" | "down" | "same"
+        gutterRight?: number
+      }
+    | undefined
   buildDragSelection: () => SelectedLineRange | undefined
   buildClickSelection: () => SelectedLineRange | undefined
   onDragStart: (hit: MouseHit) => void
@@ -185,6 +193,8 @@ function useFileViewer(config: ViewerConfig) {
     range: SelectedLineRange
     rect: DOMRect
     label: string
+    below: boolean
+    gutterEdge: number
   }>()
 
   const getRoot = () => getViewerRoot(container)
@@ -237,7 +247,13 @@ function useFileViewer(config: ViewerConfig) {
       setTextSelection(undefined)
       return
     }
-    setTextSelection({ range: selected.range, rect, label: action.label })
+    const roomBelow = rect.bottom + TEXT_SELECTION_ACTION_HEIGHT + TEXT_SELECTION_ACTION_GAP <= window.innerHeight
+    const roomAbove = rect.top - TEXT_SELECTION_ACTION_HEIGHT - TEXT_SELECTION_ACTION_GAP >= 0
+    const preferBelow = selected.direction !== "up"
+    const below = preferBelow ? roomBelow || !roomAbove : !roomAbove && roomBelow
+    const gutterEdge =
+      (selected.gutterRight ?? wrapper.getBoundingClientRect().left) - wrapper.getBoundingClientRect().left
+    setTextSelection({ range: selected.range, rect, label: action.label, below, gutterEdge })
   }
 
   const scheduleTextSelectionUpdate = () => {
@@ -819,38 +835,36 @@ function ViewerShell(props: {
       <div ref={(el) => (props.viewer.overlay = el)} class="pointer-events-none absolute inset-0 z-0" />
       <Show when={props.viewer.textSelection()}>
         {(selection) => (
-          <Portal>
-            <Button
-              data-slot="file-text-selection-action"
-              size="small"
-              variant="submit"
-              class="z-[100] whitespace-nowrap"
-              style={{
-                position: "fixed",
-                left: `${Math.max(
-                  8,
-                  Math.min(window.innerWidth - 200, selection().rect.left + LINE_COMMENT_ACTION_OFFSET),
-                )}px`,
-                top: `${
-                  selection().rect.bottom + 38 > window.innerHeight
-                    ? selection().rect.top - 6
-                    : selection().rect.bottom + 6
-                }px`,
-                transform: selection().rect.bottom + 38 > window.innerHeight ? "translateY(-100%)" : undefined,
-              }}
-              onPointerDown={(event: PointerEvent) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onMouseDown={(event: MouseEvent) => {
-                event.preventDefault()
-                event.stopPropagation()
-              }}
-              onClick={props.viewer.activateTextSelection}
-            >
-              {selection().label}
-            </Button>
-          </Portal>
+          <Button
+            data-slot="file-text-selection-action"
+            data-placement={selection().below ? "bottom" : "top"}
+            size="small"
+            variant="submit"
+            class="z-[110] whitespace-nowrap motion-safe:transition-transform duration-100 ease-out motion-reduce:transition-none"
+            style={{
+              position: "absolute",
+              "--line-comment-gutter-edge": `${selection().gutterEdge}px`,
+              left: `calc(var(--line-comment-gutter-edge) + ${LINE_COMMENT_ACTION_GAP}px)`,
+              top: `${
+                (selection().below ? selection().rect.bottom : selection().rect.top) -
+                props.viewer.wrapper.getBoundingClientRect().top
+              }px`,
+              transform: selection().below
+                ? `translateY(${TEXT_SELECTION_ACTION_GAP}px)`
+                : `translateY(calc(-100% - ${TEXT_SELECTION_ACTION_GAP}px))`,
+            }}
+            onPointerDown={(event: PointerEvent) => {
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onMouseDown={(event: MouseEvent) => {
+              event.preventDefault()
+              event.stopPropagation()
+            }}
+            onClick={props.viewer.activateTextSelection}
+          >
+            {selection().label}
+          </Button>
         )}
       </Show>
     </div>
@@ -980,7 +994,12 @@ function TextViewer<T>(props: TextFileProps<T>) {
         preserveTextSelection: true,
       })
       if (!selected?.text) return
-      return { range: selected.range, text: selected.text }
+      return {
+        range: selected.range,
+        text: selected.text,
+        direction: selected.direction,
+        gutterRight: selected.gutterRight,
+      }
     },
     buildDragSelection: () => {
       if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return
@@ -1158,7 +1177,7 @@ function DiffViewer<T>(props: DiffFileProps<T>) {
       if (!selected?.text) return
       const range = fixDiffSelection(root, selected.range)
       if (!range) return
-      return { range, text: selected.text }
+      return { range, text: selected.text, direction: selected.direction, gutterRight: selected.gutterRight }
     },
     buildDragSelection: () => {
       if (viewer.dragStart === undefined || viewer.dragEnd === undefined) return
