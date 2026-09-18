@@ -166,14 +166,14 @@ story("keeps the direct gutter comment action in the review panel", async ({ mou
   expect(await comment.evaluate((element) => (element as HTMLElement).style.background)).toBe(
     "var(--v2-background-bg-inverse)",
   )
-  expect(await comment.evaluate((element) => (element as HTMLElement).style.left)).toBe("28px")
+  expect(await comment.evaluate((element) => (element as HTMLElement).style.left)).toBe("-4px")
   await expect(comment).toHaveCSS("z-index", "110")
   const box = await comment.boundingBox()
   const gutterRight = await root
     .locator("[data-code]")
     .first()
     .evaluate((element) => element.firstElementChild?.getBoundingClientRect().right)
-  expect((box?.x ?? 0) - (gutterRight ?? 0)).toBe(8)
+  expect((box?.x ?? 0) + (box?.width ?? 0) - (gutterRight ?? 0)).toBe(-4)
   await comment.dispatchEvent("click")
   await expect(root.getByRole("textbox")).toBeVisible()
   await expect(root.locator('[data-line="1"]')).toHaveAttribute("data-selected-line", /.*/)
