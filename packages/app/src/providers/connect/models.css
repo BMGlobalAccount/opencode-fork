@@ -1,10 +1,23 @@
-[data-first-provider-model]:has(+ [data-first-provider-model]:hover),
-[data-first-provider-model]:hover {
+[data-first-provider-model] {
+  width: calc(100% - 8px);
+  margin-inline: 4px;
+  padding-inline: 12px;
+  border-radius: 4px;
+}
+
+[data-first-provider-model]:has(+ [data-first-provider-model]:is(:hover, :focus-visible)),
+[data-first-provider-model]:is(:hover, :focus-visible) {
   border-block-end-color: transparent;
 }
 
-[data-first-provider-model]:hover {
-  background-color: var(--v2-overlay-simple-overlay-hover);
+@media (hover: hover) {
+  [data-first-provider-model]:hover {
+    background-color: var(--v2-background-bg-layer-03);
+  }
+}
+
+[data-first-provider-model]:focus-visible {
+  background-color: var(--v2-background-bg-layer-03);
 }
 
 [data-component="first-provider-models"] [data-component="settings-list"] {

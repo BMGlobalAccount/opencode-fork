@@ -295,7 +295,7 @@ test("Console account is primary and the code is displayed without a copy-code s
   await expect(first).toHaveCSS("background-color", "rgba(0, 0, 0, 0)")
   await expect(dialog.locator('[data-component="settings-list"]')).toHaveCount(2)
   await expect(first.locator('[data-slot="settings-row-title"]')).toHaveCSS("font-weight", "440")
-  await expect(first).toHaveCSS("border-radius", "0px")
+  await expect(first).toHaveCSS("border-radius", "4px")
   const providerGroups = dialog.locator('[data-component="provider-model-group"]')
   await expect(providerGroups).toHaveCount(2)
   const openCodeGroup = dialog.locator('[data-component="provider-model-group"][data-provider="opencode"]')
@@ -325,6 +325,9 @@ test("Console account is primary and the code is displayed without a copy-code s
   await expect(dialog.locator('[data-slot="dialog-header"]')).toHaveCSS("padding-top", "20px")
   const hovered = list.getByRole("radio", { name: "Console Model 3" })
   await hovered.hover()
+  await expect
+    .poll(() => hovered.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .not.toBe("rgba(0, 0, 0, 0)")
   await expect(hovered).toHaveCSS("border-bottom-color", "rgba(0, 0, 0, 0)")
   await expect(list.getByRole("radio", { name: "Console Model 2" })).toHaveCSS(
     "border-bottom-color",

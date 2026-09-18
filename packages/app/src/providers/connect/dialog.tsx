@@ -975,7 +975,7 @@ function ProviderConnection(props: {
                 data-first-provider-model=""
                 data-selected={selected() ? "" : undefined}
                 aria-checked={selected()}
-                class="-mx-4 w-[calc(100%+32px)] px-4 text-start focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
+                class="w-full text-start focus-visible:outline-none"
                 onClick={() => setConsoleState("selectedModel", modelKey(model))}
               >
                 <div data-slot="settings-row-copy">
