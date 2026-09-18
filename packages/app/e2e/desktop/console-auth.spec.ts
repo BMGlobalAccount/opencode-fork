@@ -298,10 +298,18 @@ test("Console account is primary and the code is displayed without a copy-code s
   await expect(first).toHaveCSS("border-radius", "0px")
   const providerGroups = dialog.locator('[data-component="provider-model-group"]')
   await expect(providerGroups).toHaveCount(2)
-  await expect(dialog.locator('[data-component="provider-model-group"][data-provider="opencode"]')).toHaveCSS(
-    "border-radius",
-    "8px",
-  )
+  const openCodeGroup = dialog.locator('[data-component="provider-model-group"][data-provider="opencode"]')
+  await expect(openCodeGroup).toHaveCSS("border-radius", "8px")
+  await expect
+    .poll(() =>
+      openCodeGroup.evaluate((element) => {
+        const list = element.querySelector<HTMLElement>('[data-component="settings-list"]')
+        if (!list) return false
+        const background = getComputedStyle(element).backgroundColor
+        return background !== "rgba(0, 0, 0, 0)" && getComputedStyle(list).backgroundColor === "rgba(0, 0, 0, 0)"
+      }),
+    )
+    .toBe(true)
   await expect(providerGroups.getByText(/models? enabled$/)).toHaveCount(0)
   const google = dialog.getByRole("button", { name: "Google", exact: true })
   await expect(
