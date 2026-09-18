@@ -1385,6 +1385,8 @@ export const dict = {
   "settings.providers.tag.other": "Other",
   "settings.models.title": "Models",
   "settings.models.description": "Choose which models appear in model picker",
+  "settings.models.enabled.one": "{{count}} model enabled",
+  "settings.models.enabled.other": "{{count}} models enabled",
   "settings.agents.title": "Agents",
   "settings.agents.description": "Agent settings will be configurable here.",
   "settings.commands.title": "Commands",

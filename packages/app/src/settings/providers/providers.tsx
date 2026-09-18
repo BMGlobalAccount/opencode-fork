@@ -6,6 +6,7 @@ import { ProviderIcon } from "@opencode/ui/provider-icon"
 import { OpenCodeLogo } from "@/providers/opencode-logo"
 import { showToast } from "@/shell/notifications/toast"
 import { popularProviders, useProviders } from "@/providers/catalog/providers"
+import { consoleProviderGroup } from "@/providers/catalog/console"
 import { useIntegrations } from "@/providers/catalog/integrations"
 import { createEffect, createMemo, type Component, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -87,20 +88,7 @@ export const SettingsProviders: Component<{
 
   const connected = createMemo(() => available().filter((item) => !state.disconnecting[item.id]))
 
-  const consoleGroup = createMemo(() => {
-    const root = available().find((item) => item.id === "opencode")
-    const suffix = " / OpenCode"
-    if (!root?.name.endsWith(suffix)) return
-    const workspace = root.name.slice(0, -suffix.length).trim()
-    if (!workspace) return
-    const prefix = `${workspace} / `
-    return {
-      root,
-      workspace,
-      providers: available().filter((item) => item.name.startsWith(prefix)),
-      prefix,
-    }
-  })
+  const consoleGroup = createMemo(() => consoleProviderGroup(available()))
 
   const displayed = createMemo(() => {
     const group = consoleGroup()

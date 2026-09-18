@@ -127,6 +127,7 @@ export type Model = {
 
 export type Provider = {
   id: string
+  integrationID?: string
   name: string
   source: "env" | "config" | "custom" | "api"
   env: string[]

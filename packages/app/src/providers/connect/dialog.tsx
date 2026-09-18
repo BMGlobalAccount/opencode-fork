@@ -27,6 +27,7 @@ import { useParams } from "@solidjs/router"
 import { ExternalLink } from "@/runtime/platform/external-link"
 import { useLanguage } from "@/runtime/i18n/language"
 import { useProviders } from "@/providers/catalog/providers"
+import { consoleProviderGroup, consoleProviderName } from "@/providers/catalog/console"
 import { useIntegrations } from "@/providers/catalog/integrations"
 import { CustomProviderForm } from "@/providers/credentials/dialog"
 import { decode64 } from "@/runtime/persistence/base64"
@@ -42,6 +43,7 @@ import { ServerConnection } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
 import { useSettingsSurface } from "@/settings/surface"
 import { SettingsList } from "@/settings/list"
+import { ProviderModelGroup } from "@/providers/models/provider-group"
 import "./models.css"
 
 const CUSTOM_ID = "_custom"
@@ -453,16 +455,11 @@ function ProviderConnection(props: {
   })
   const managedProviders = createMemo(() => {
     if (props.provider !== "opencode") return
-    const root = connectionProviders().find((provider) => provider.id === "opencode")
-    const suffix = " / OpenCode"
-    if (!root?.name.endsWith(suffix)) return
-    const workspace = root.name.slice(0, -suffix.length).trim()
-    if (!workspace) return
-    return { workspace, prefix: `${workspace} / ` }
+    return consoleProviderGroup(connectionProviders())
   })
   const connectionGroupName = (name: string) => {
     const managed = managedProviders()
-    return managed && name.startsWith(managed.prefix) ? name.slice(managed.prefix.length) : name
+    return managed ? consoleProviderName(managed, name) : name
   }
   const modelKey = (model: { providerID: string; id: string }) => `${model.providerID}:${model.id}`
   const selectedModel = () => connectionModels().find((model) => modelKey(model) === consoleState.selectedModel)
@@ -1016,54 +1013,69 @@ function ProviderConnection(props: {
             aria-label={language.t("provider.connect.models.list", { provider: connectedProviderName() })}
           >
             <Show
-              when={connectionGroups().length > 1}
-              fallback={<ConnectionModelList items={connectionGroups()[0]?.models ?? []} />}
+              when={managedProviders()}
+              fallback={
+                <Show
+                  when={connectionGroups().length > 1}
+                  fallback={<ConnectionModelList items={connectionGroups()[0]?.models ?? []} />}
+                >
+                  <For each={connectionGroups()}>
+                    {(group) => {
+                      const expanded = () => !consoleState.collapsed[group.provider.id]
+                      return (
+                        <section class="settings-section" data-expanded={expanded() ? "" : undefined}>
+                          <h3 class="settings-models-group-header sticky top-0 z-[1] box-content bg-v2-background-bg-layer-01">
+                            <button
+                              type="button"
+                              class="settings-models-group-trigger"
+                              aria-expanded={expanded()}
+                              onClick={() => setConsoleState("collapsed", group.provider.id, expanded())}
+                            >
+                              <span class="settings-models-group-chevron">
+                                <Icon
+                                  name="chevron-down"
+                                  size="small"
+                                  classList={{ "-rotate-90 rtl:rotate-90": !expanded() }}
+                                />
+                              </span>
+                              <span class="settings-models-group-label">
+                                <Show
+                                  when={group.provider.id === "opencode"}
+                                  fallback={<ProviderIcon id={group.provider.id} class="size-4 shrink-0" />}
+                                >
+                                  <OpenCodeLogo class="size-4 shrink-0" />
+                                </Show>
+                                <span class="settings-section-title">{group.provider.name}</span>
+                              </span>
+                            </button>
+                          </h3>
+                          <Show when={expanded()}>
+                            <ConnectionModelList items={group.models} />
+                          </Show>
+                        </section>
+                      )
+                    }}
+                  </For>
+                </Show>
+              }
             >
-              <For each={connectionGroups()}>
-                {(group) => {
-                  const expanded = () => !consoleState.collapsed[group.provider.id]
-                  const label = () => (
-                    <span class="settings-models-group-label">
-                      <Show when={!managedProviders()}>
-                        <Show
-                          when={group.provider.id === "opencode"}
-                          fallback={<ProviderIcon id={group.provider.id} class="size-4 shrink-0" />}
-                        >
-                          <OpenCodeLogo class="size-4 shrink-0" />
-                        </Show>
-                      </Show>
-                      <span class="settings-section-title">{connectionGroupName(group.provider.name)}</span>
-                    </span>
-                  )
-                  return (
-                    <section class="settings-section" data-expanded={expanded() ? "" : undefined}>
-                      <h3
-                        class="settings-models-group-header sticky top-0 z-[1] box-content bg-v2-background-bg-layer-01"
-                        classList={{ "pb-2": !expanded() && !managedProviders() }}
+              <div class="provider-model-groups provider-model-groups--dialog">
+                <For each={connectionGroups()}>
+                  {(group) => {
+                    const expanded = () => !consoleState.collapsed[group.provider.id]
+                    return (
+                      <ProviderModelGroup
+                        provider={group.provider}
+                        name={connectionGroupName(group.provider.name)}
+                        expanded={expanded()}
+                        onExpandedChange={(value) => setConsoleState("collapsed", group.provider.id, !value)}
                       >
-                        <button
-                          type="button"
-                          class="settings-models-group-trigger"
-                          aria-expanded={expanded()}
-                          onClick={() => setConsoleState("collapsed", group.provider.id, expanded())}
-                        >
-                          <span class="settings-models-group-chevron">
-                            <Icon
-                              name="chevron-down"
-                              size="small"
-                              classList={{ "-rotate-90 rtl:rotate-90": !expanded() }}
-                            />
-                          </span>
-                          {label()}
-                        </button>
-                      </h3>
-                      <Show when={expanded()}>
                         <ConnectionModelList items={group.models} />
-                      </Show>
-                    </section>
-                  )
-                }}
-              </For>
+                      </ProviderModelGroup>
+                    )
+                  }}
+                </For>
+              </div>
             </Show>
           </div>
         </div>
