@@ -185,7 +185,7 @@ async function fixture(
             ? [provider, ...(options.singleProvider ? [] : [secondProvider])].concat(
                 options.directProvider || options.existingProvider ? [directProvider] : [],
               )
-            : [{ ...provider, name: "OpenCode" }],
+            : [{ ...provider, name: "OpenCode Zen" }],
       },
     })
   })
@@ -652,17 +652,15 @@ test("backdrop clicks do not cancel Console authorization", async ({ page }) => 
 })
 
 test("first connection waits for the managed Console catalog", async ({ page }) => {
-  const { state, dialog } = await fixture(page, false, {
-    stagedCatalog: true,
-    staleIntegration: true,
-    directProvider: true,
-  })
+  const { state, dialog } = await fixture(page, false, { stagedCatalog: true, directProvider: true })
   await dialog.getByRole("button", { name: "Continue to OpenCode Console" }).click()
   await expect(dialog.getByRole("group", { name: "Device code: TFXS-STXG" })).toBeVisible()
   state.status = "complete"
   await expect(dialog.getByRole("status")).toContainText("Waiting for confirmation")
   await expect(dialog.getByText("OpenCode connected. Loading your models", { exact: true })).toHaveCount(0)
   await expect(dialog.locator('[data-component="first-provider-models"]')).toHaveCount(0)
+  const connected = page.locator('[data-component="connected-providers-section"]')
+  await expect(connected.getByText("OpenCode Zen", { exact: true })).toHaveCount(0)
 
   state.catalogReady = true
   await page.evaluate((directory) => {
@@ -676,7 +674,6 @@ test("first connection waits for the managed Console catalog", async ({ page }) 
   await expect(dialog.getByRole("heading", { name: "Connected to OpenCode Console" })).toBeVisible()
   await expect(dialog.locator('[data-component="provider-model-group"]')).toHaveCount(2)
   await dialog.getByRole("button", { name: "Close", exact: true }).click()
-  const connected = page.locator('[data-component="connected-providers-section"]')
   await expect(connected.getByText("OpenCode", { exact: true })).toBeVisible()
   await expect(connected.getByText("Anomaly", { exact: true })).toBeVisible()
   const consoleRow = connected.locator(".settings-provider-console-header")

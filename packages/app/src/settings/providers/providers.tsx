@@ -48,6 +48,7 @@ export const SettingsProviders: Component<{
   const [state, setState] = createStore({
     disconnecting: {} as Record<string, "removing" | "removed" | "absent" | undefined>,
     consoleExpanded: false,
+    connecting: false,
   })
   const updateDisconnecting = (ids: string[], status: "removing" | "removed" | "absent" | undefined) =>
     setState("disconnecting", (current) => ({
@@ -57,6 +58,7 @@ export const SettingsProviders: Component<{
   const integration = (providerID: string) => integrations.list().find((item) => item.id === providerID)
 
   const connect = (provider?: string) => {
+    setState("connecting", true)
     providerConnect.select(provider)
     void dialog.show(
       () => (
@@ -74,6 +76,7 @@ export const SettingsProviders: Component<{
         />
       ),
       () => {
+        setState("connecting", false)
         const location = props.directory ? { directory: props.directory } : undefined
         data.location.integration.invalidate(location)
         data.location.provider.invalidate(location)
@@ -95,13 +98,16 @@ export const SettingsProviders: Component<{
       .list()
       .find((item) => item.id === "opencode")
       ?.connections.some((connection) => connection.type === "credential" || connection.type === "env")
+    const consoleTransition =
+      state.connecting && providerConnect.selected() === "opencode" && consoleConnected && managedConsole === undefined
     return connected
       .filter(
         (provider) =>
           provider.id !== "opencode" ||
-          managedConsole !== undefined ||
-          consoleConnected ||
-          Object.values(provider.models).some((model) => model.cost.input > 0),
+          (!consoleTransition &&
+            (managedConsole !== undefined ||
+              consoleConnected ||
+              Object.values(provider.models).some((model) => model.cost.input > 0))),
       )
       .toSorted((a, b) => Number(b.id === "opencode-go") - Number(a.id === "opencode-go"))
   })
