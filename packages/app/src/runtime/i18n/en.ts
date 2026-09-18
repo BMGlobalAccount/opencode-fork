@@ -193,8 +193,9 @@ export const dict = {
 
   "provider.connect.title": "Connect {{provider}}",
   "provider.connect.opencode.name": "OpenCode",
+  "provider.connect.opencode.freeName": "OpenCode Free",
   "provider.connect.opencode.errorTitle": "Connect to OpenCode",
-  "provider.connect.console.title": "Connect OpenCode Console account",
+  "provider.connect.console.title": "Connecting to OpenCode",
   "provider.connect.console.name": "OpenCode Console",
   "provider.connect.console.instructions":
     "Continue in your browser. Confirm the code shown there matches the one below.",

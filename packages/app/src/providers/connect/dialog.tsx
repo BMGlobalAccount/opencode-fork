@@ -43,7 +43,7 @@ import { ServerConnection } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
 import { useSettingsSurface } from "@/settings/surface"
 import { SettingsList } from "@/settings/list"
-import { ProviderModelGroup } from "@/providers/models/provider-group"
+import { ProviderModelGroup, ProviderModelIcon } from "@/providers/models/provider-group"
 import "./models.css"
 
 const CUSTOM_ID = "_custom"
@@ -503,7 +503,7 @@ function ProviderConnection(props: {
   const modelKey = (model: { providerID: string; id: string }) => `${model.providerID}:${model.id}`
   const selectedModel = () => connectionModels().find((model) => modelKey(model) === consoleState.selectedModel)
   const connectedProviderName = () =>
-    props.provider === "opencode" ? language.t("provider.connect.console.name") : provider().name
+    props.provider === "opencode" ? language.t("provider.connect.opencode.name") : provider().name
   const recommended = () => {
     const current = props.selection?.current()
     if (initialModel && current?.id === initialModel.id && current.provider.id === initialModel.provider.id)
@@ -1087,12 +1087,7 @@ function ProviderConnection(props: {
                                 />
                               </span>
                               <span class="settings-models-group-label">
-                                <Show
-                                  when={group.provider.id === "opencode"}
-                                  fallback={<ProviderIcon id={group.provider.id} class="size-4 shrink-0" />}
-                                >
-                                  <OpenCodeLogo class="size-4 shrink-0" />
-                                </Show>
+                                <ProviderModelIcon provider={group.provider} class="shrink-0" />
                                 <span class="settings-section-title">{group.provider.name}</span>
                               </span>
                             </button>

@@ -1,6 +1,5 @@
 import { useFilteredList } from "@opencode/ui/hooks"
 import { Badge } from "@opencode/ui/badge"
-import { ProviderIcon } from "@opencode/ui/provider-icon"
 import { Switch } from "@opencode/ui/switch"
 import { Icon } from "@opencode/ui/icon"
 import { IconButton } from "@opencode/ui/icon-button"
@@ -17,7 +16,7 @@ import { SettingsList } from "@/settings/list"
 import { SettingsRow } from "@/settings/row"
 import { OpenCodeLogo } from "@/providers/opencode-logo"
 import { consoleProviderGroup, consoleProviderName } from "@/providers/catalog/console"
-import { ProviderModelGroup } from "@/providers/models/provider-group"
+import { ProviderModelGroup, ProviderModelIcon } from "@/providers/models/provider-group"
 import "@/settings/settings.css"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
@@ -27,7 +26,6 @@ type DisplayGroup =
   | { type: "provider"; group: ModelGroup }
   | { type: "console"; managed: ConsoleGroup; providers: ModelGroup[] }
 
-const PROVIDER_ICON_SIZE = 16
 const CONSOLE_GROUP_KEY = "console:opencode"
 
 export const ModelProvidersSchema = Schema.Struct({
@@ -103,6 +101,8 @@ export const SettingsModels: Component<{
   })
   const searching = () => list.filter().length > 0
   const expanded = (key: string) => searching() || !store.collapsed[key]
+  const providerName = (provider: ModelItem["provider"]) =>
+    provider.id === "opencode" ? language.t("provider.connect.opencode.freeName") : provider.name
   const enabled = createMemo(() =>
     models.list().reduce((counts, item) => {
       if (!models.visible({ providerID: item.provider.id, modelID: item.id })) return counts
@@ -252,13 +252,11 @@ export const SettingsModels: Component<{
                                 />
                               </span>
                               <span class="settings-models-group-label">
-                                <ProviderIcon
-                                  id={group().category}
-                                  width={PROVIDER_ICON_SIZE}
-                                  height={PROVIDER_ICON_SIZE}
+                                <ProviderModelIcon
+                                  provider={group().items[0].provider}
                                   class="settings-models-provider-icon shrink-0"
                                 />
-                                <bdi class="settings-models-group-title">{group().items[0].provider.name}</bdi>
+                                <bdi class="settings-models-group-title">{providerName(group().items[0].provider)}</bdi>
                               </span>
                             </button>
                           </h3>

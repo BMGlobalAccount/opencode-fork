@@ -13,7 +13,6 @@ import { ScrollView } from "@opencode/ui/scroll-view"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { Menu } from "@opencode/ui/menu"
 import { TextInput } from "@opencode/ui/text-input"
-import { ProviderIcon } from "@opencode/ui/provider-icon"
 import { ModelTooltip } from "./tooltip"
 import { useLanguage } from "@/runtime/i18n/language"
 import { decode64 } from "@/runtime/persistence/base64"
@@ -24,7 +23,7 @@ import { matchesModelSearch } from "./search"
 import { SettingsList } from "@/settings/list"
 import { OpenCodeLogo } from "@/providers/opencode-logo"
 import { consoleProviderGroup, consoleProviderName } from "@/providers/catalog/console"
-import { ProviderModelGroup } from "@/providers/models/provider-group"
+import { ProviderModelGroup, ProviderModelIcon } from "@/providers/models/provider-group"
 import "@/settings/settings.css"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
@@ -89,6 +88,8 @@ const ModelList: Component<{
     })
   })
   const expanded = (provider: string) => store.search.length > 0 || !store.collapsed[provider]
+  const providerName = (provider: ModelItem["provider"]) =>
+    provider.id === "opencode" ? language.t("provider.connect.opencode.freeName") : provider.name
   const managedIDs = createMemo(() => new Set(consoleGroup()?.providers.map((provider) => provider.id) ?? []))
   const visibleModels = () =>
     models().filter(
@@ -240,8 +241,10 @@ const ModelList: Component<{
                                   <Icon name="chevron-down" size="small" classList={{ collapsed: !open() }} />
                                 </span>
                                 <span class="settings-models-group-label">
-                                  <ProviderIcon id={group().category} width={16} height={16} class="shrink-0" />
-                                  <bdi class="settings-models-group-title">{group().items[0].provider.name}</bdi>
+                                  <ProviderModelIcon provider={group().items[0].provider} class="shrink-0" />
+                                  <bdi class="settings-models-group-title">
+                                    {providerName(group().items[0].provider)}
+                                  </bdi>
                                 </span>
                               </button>
                             </h3>
