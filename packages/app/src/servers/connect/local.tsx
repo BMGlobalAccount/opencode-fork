@@ -4,8 +4,6 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { isLoopback } from "./browser"
 import "./screen.css"
 
-// The hosted app cannot reach plain-HTTP servers (mixed content), so a pairing link that only
-// carries such addresses hands the browser over to the server's own web UI instead.
 export function ConnectLocalScreen(props: { urls: readonly string[] }) {
   const language = useLanguage()
   const target = props.urls.find((url) => !isLoopback(new URL(url))) ?? props.urls[0]

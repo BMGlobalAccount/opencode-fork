@@ -72,9 +72,7 @@ function ConnectRoute() {
   const navigate = useNavigate()
   const servers = useServers()
   const pairing = decodePairingUrl(location.search, location.origin) ?? decodePairingUrl(location.hash)
-  // The hosted HTTPS app cannot fetch plain-HTTP servers (mixed content), and loopback would point
-  // at the scanning device itself. Only connect to an address this page can use; otherwise hand off
-  // to the server's own web UI. A page served by the server itself prefers its own origin.
+  // From the hosted https page, http is mixed content and loopback is the scanning device itself.
   const url =
     pairing?.urls.find((url) => url === location.origin) ??
     pairing?.urls.find((url) => location.protocol !== "https:" || url.startsWith("https:"))

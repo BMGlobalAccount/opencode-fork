@@ -38,7 +38,6 @@ export function pairingUrl(
   return `${new URL("/connect", host)}?data=${encodeURIComponent(JSON.stringify(value))}`
 }
 
-// Scanned codes are either the raw pairing JSON or a full /connect URL from `opencode pair` or desktop.
 export function decodePairingScan(value: string) {
   const url = URL.parse(value.trim())
   if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) return decodePairingCode(value)

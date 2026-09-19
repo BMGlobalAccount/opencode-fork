@@ -18,9 +18,7 @@ export default Runtime.handler(
           OpenCode.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) }).server.info(),
         )).urls
     const info = { urls, username: "opencode", password }
-    // The QR is a hosted URL so phone cameras open it: the mobile app claims the link when installed,
-    // otherwise the web app's /connect route handles it. The payload lives in the fragment so the
-    // credential never reaches app.opencode.ai.
+    // Fragment, not query: the credential must never reach app.opencode.ai.
     const link = `https://app.opencode.ai/connect#${Buffer.from(JSON.stringify(info)).toString("base64url")}`
     process.stdout.write(
       [
