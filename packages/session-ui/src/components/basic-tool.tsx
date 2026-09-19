@@ -53,6 +53,8 @@ export interface BasicToolProps {
   rail?: boolean
   onSubtitleClick?: () => void
   onTriggerClick?: JSX.EventHandlerUnion<HTMLElement, MouseEvent>
+  onTriggerMouseDown?: JSX.EventHandlerUnion<HTMLElement, MouseEvent>
+  onTriggerAuxClick?: JSX.EventHandlerUnion<HTMLElement, MouseEvent>
   onTriggerKeyDown?: JSX.EventHandlerUnion<HTMLElement, KeyboardEvent>
   triggerHref?: string
   triggerAsLink?: boolean
@@ -302,6 +304,8 @@ export function BasicTool(props: BasicToolProps) {
             <Collapsible.Trigger
               data-hide-details={props.hideDetails ? "true" : undefined}
               onClick={props.onTriggerClick}
+              onMouseDown={props.onTriggerMouseDown}
+              onAuxClick={props.onTriggerAuxClick}
             >
               {trigger()}
             </Collapsible.Trigger>
@@ -315,6 +319,8 @@ export function BasicTool(props: BasicToolProps) {
           tabIndex={!props.triggerHref && props.clickable ? 0 : undefined}
           data-hide-details={props.hideDetails ? "true" : undefined}
           onClick={props.onTriggerClick}
+          onMouseDown={props.onTriggerMouseDown}
+          onAuxClick={props.onTriggerAuxClick}
           onKeyDown={props.onTriggerKeyDown}
         >
           {trigger()}

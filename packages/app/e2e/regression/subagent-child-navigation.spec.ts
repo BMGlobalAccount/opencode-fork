@@ -15,14 +15,29 @@ const taskDescription = "Inspect child navigation"
 
 test.use({ viewport: { width: 1440, height: 900 } })
 
-test("navigates to a subagent child session missing from the session list", async ({ page }) => {
+test("opens a subagent child session in the side panel", async ({ page }) => {
   await setup(page)
-  await openChildFromParent(page)
+  await page.goto(sessionHref(parentID))
+  await expectSessionTitle(page, parentTitle)
+  await page.getByRole("button", { name: "Used 1 Agent", exact: true }).click()
+  await page.locator(`a[href="${sessionHref(childID)}"]`).click()
 
-  await expectSessionTitle(page, taskDescription)
-  await expect(page.getByRole("heading", { name: parentTitle })).toHaveCount(0)
+  await expect(page).toHaveURL(sessionHref(parentID))
+  await expect(page.getByRole("tab", { name: taskDescription })).toBeVisible()
+  await expect(page.locator('[data-component="subagent-session-panel"]')).toBeVisible()
+  await expectSessionTitle(page, parentTitle)
+})
 
-  await expect(page.getByRole("button", { name: "Toggle review", exact: true })).toBeVisible()
+test("offers side panel and new tab actions from the subagent context menu", async ({ page }) => {
+  await setup(page)
+  await page.goto(sessionHref(parentID))
+  await expectSessionTitle(page, parentTitle)
+  await page.getByRole("button", { name: "Used 1 Agent", exact: true }).click()
+
+  await page.locator(`a[href="${sessionHref(childID)}"]`).click({ button: "right" })
+
+  await expect(page.getByRole("menuitem", { name: "Open in side panel", exact: true })).toBeVisible()
+  await expect(page.getByRole("menuitem", { name: "Open in new tab", exact: true })).toBeVisible()
 })
 
 test("returns to the parent session with Escape", async ({ page }) => {
@@ -49,10 +64,7 @@ test("shows parent lineage while the child timeline loads", async ({ page }) => 
     },
   )
 
-  await page.goto(sessionHref(parentID))
-  await expectSessionTitle(page, parentTitle)
-  await page.getByRole("button", { name: "Used 1 Agent", exact: true }).click()
-  await page.locator(`a[href="${sessionHref(childID)}"]`).click()
+  await openChildFromParent(page)
   await Promise.all([requested.promise, expect(page).toHaveURL(sessionHref(childID))])
   await Promise.all([
     expect(page.locator('[data-slot="session-title-parent"]')).toHaveText(parentTitle),
@@ -61,7 +73,7 @@ test("shows parent lineage while the child timeline loads", async ({ page }) => 
   await expectSessionTitle(page, taskDescription)
 })
 
-test("keeps the parent visible while the child session resolves", async ({ page }) => {
+test("keeps the parent visible while a middle-clicked child tab resolves", async ({ page }) => {
   await setup(page)
   const requested = Promise.withResolvers<void>()
   const release = Promise.withResolvers<void>()
@@ -77,47 +89,23 @@ test("keeps the parent visible while the child session resolves", async ({ page 
   await expectSessionTitle(page, parentTitle)
 
   await page.getByRole("button", { name: "Used 1 Agent", exact: true }).click()
-  await page.locator(`a[href="${sessionHref(childID)}"]`).click()
+  await page.locator(`a[href="${sessionHref(childID)}"]`).click({ button: "middle" })
   await requested.promise
   await Promise.all([expect(page).toHaveURL(sessionHref(parentID)), expectSessionTitle(page, parentTitle)]).finally(
     () => release.resolve(),
   )
 
-  await expectSessionTitle(page, taskDescription)
+  await expect(page.locator(`[data-slot="titlebar-tabs"] a[href="${sessionHref(childID)}"]`)).toHaveCount(1)
 })
 
-test("keeps the parent tab selected while a loaded child session resolves", async ({ page }) => {
+test("opens a loaded child in a background tab with middle click", async ({ page }) => {
   await setup(page)
-  await openChildFromParent(page)
-  await expectSessionTitle(page, taskDescription)
-  await page.goBack()
-  await Promise.all([expect(page).toHaveURL(sessionHref(parentID)), expectSessionTitle(page, parentTitle)])
+  await page.goto(sessionHref(parentID))
+  await expectSessionTitle(page, parentTitle)
+  await page.getByRole("button", { name: "Used 1 Agent", exact: true }).click()
+  await page.locator(`a[href="${sessionHref(childID)}"]`).click({ button: "middle" })
 
-  const requested = Promise.withResolvers<void>()
-  const release = Promise.withResolvers<void>()
-  await page.route(
-    (url) => url.pathname === `/api/session/${childID}` && url.port === (process.env.PLAYWRIGHT_SERVER_PORT ?? "4096"),
-    async (route) => {
-      requested.resolve()
-      await release.promise
-      await route.fallback()
-    },
-  )
-
-  const parentTab = page.locator("[data-titlebar-tab-slot]", {
-    has: page.locator('[data-slot="tab-title"]', { hasText: parentTitle }),
-  })
-  await page.locator(`a[href="${sessionHref(childID)}"]`).click()
-  await Promise.all([requested.promise, expect(page).toHaveURL(sessionHref(childID))])
-  await Promise.all([
-    expect(parentTab).toHaveAttribute("data-active", "true"),
-    expect(page.locator('[data-slot="session-title-parent"]')).toHaveText(parentTitle),
-  ]).finally(() => release.resolve())
-  await expectSessionTitle(page, taskDescription)
-
-  const home = page.getByRole("button", { name: "Home" })
-  await home.click()
-  await expect(page).toHaveURL("/")
+  await expect(page).toHaveURL(sessionHref(parentID))
   const childTab = page.locator(`[data-slot="titlebar-tabs"] a[href="${sessionHref(childID)}"]`)
   await expect(childTab).toHaveCount(1)
   await childTab.click()
@@ -198,7 +186,11 @@ async function openChildFromParent(page: Page) {
 
   const card = page.locator(`a[href="${sessionHref(childID)}"]`)
   await expect(card).toBeVisible()
-  await card.click()
+  await card.click({ button: "middle" })
+
+  const childTab = page.locator(`[data-slot="titlebar-tabs"] a[href="${sessionHref(childID)}"]`)
+  await expect(childTab).toHaveCount(1)
+  await childTab.click()
 
   await expect(page).toHaveURL(new RegExp(`/server/.+/session/${childID}$`), { timeout: 15_000 })
 }

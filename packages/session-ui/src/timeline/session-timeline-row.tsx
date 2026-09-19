@@ -430,6 +430,13 @@ export function createSessionTimelineRowRenderer(input: {
       event.preventDefault()
       open()
     }
+    const openInTab = (event: MouseEvent) => {
+      if (event.button !== 1 || !data.openSessionInTab) return
+      const id = childID()
+      if (!id) return
+      event.preventDefault()
+      data.openSessionInTab(id)
+    }
     return (
       <>
         <Show when={compaction()}>
@@ -461,6 +468,10 @@ export function createSessionTimelineRowRenderer(input: {
                           role={clickable() && !href() ? "link" : undefined}
                           tabIndex={clickable() && !href() ? 0 : undefined}
                           onClick={navigate}
+                          onMouseDown={(event: MouseEvent) => {
+                            if (event.button === 1 && data.openSessionInTab) event.preventDefault()
+                          }}
+                          onAuxClick={openInTab}
                           onKeyDown={navigateKey}
                         >
                           <bdi

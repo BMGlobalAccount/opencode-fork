@@ -6,6 +6,7 @@ import { createEffect, For, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { useLanguage } from "@/runtime/i18n/language"
+import { Menu } from "@opencode/ui/menu"
 
 export type BackgroundTask = {
   id: string
@@ -60,26 +61,62 @@ export function BackgroundWorkSummary(props: { tasks: BackgroundTask[]; mobile?:
         >
           <For each={props.tasks.slice(0, 10)}>
             {(task) => (
-              <Dynamic
-                component={task.type === "subagent" ? "a" : "div"}
-                data-component="session-background-list-item"
-                class="session-service-row"
-                classList={{
-                  "hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none":
-                    task.type === "subagent",
-                }}
-                href={task.type === "subagent" ? data.sessionHref?.(task.id) : undefined}
-                onClick={(event: MouseEvent) => {
-                  if (task.type !== "subagent" || !data.navigateToSession) return
-                  if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-                  event.preventDefault()
-                  setStore("open", false)
-                  data.navigateToSession(task.id)
-                }}
-              >
-                <span class="shrink-0">{taskType(task)}</span>
-                <span class="session-summary-label text-v2-text-text-faint">{task.label}</span>
-              </Dynamic>
+              <Menu.Context modal={false}>
+                <Menu.Context.Trigger
+                  as={Dynamic}
+                  component={task.type === "subagent" ? "a" : "div"}
+                  data-component="session-background-list-item"
+                  class="session-service-row"
+                  classList={{
+                    "hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none":
+                      task.type === "subagent",
+                  }}
+                  href={task.type === "subagent" ? data.sessionHref?.(task.id) : undefined}
+                  onClick={(event: MouseEvent) => {
+                    if (task.type !== "subagent" || !data.navigateToSession) return
+                    if (event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+                    event.preventDefault()
+                    setStore("open", false)
+                    data.navigateToSession(task.id)
+                  }}
+                  onMouseDown={(event: MouseEvent) => {
+                    if (event.button === 1 && task.type === "subagent" && data.openSessionInTab) event.preventDefault()
+                  }}
+                  onAuxClick={(event: MouseEvent) => {
+                    if (event.button !== 1 || task.type !== "subagent" || !data.openSessionInTab) return
+                    event.preventDefault()
+                    setStore("open", false)
+                    data.openSessionInTab(task.id)
+                  }}
+                >
+                  <span class="shrink-0">{taskType(task)}</span>
+                  <span class="session-summary-label text-v2-text-text-faint">{task.label}</span>
+                </Menu.Context.Trigger>
+                <Show when={task.type === "subagent"}>
+                  <Menu.Context.Portal>
+                    <Menu.Context.Content>
+                      <Menu.Item
+                        onSelect={() => {
+                          setStore("open", false)
+                          data.navigateToSession?.(task.id)
+                        }}
+                      >
+                        {language.t("session.subagent.openSidePanel")}
+                      </Menu.Item>
+                      <Show when={data.openSessionInTab}>
+                        <Menu.Item
+                          onSelect={() => {
+                            setStore("open", false)
+                            data.openSessionInTab?.(task.id)
+                          }}
+                        >
+                          {language.t("session.subagent.openNewTab")}
+                        </Menu.Item>
+                      </Show>
+                    </Menu.Context.Content>
+                  </Menu.Context.Portal>
+                </Show>
+              </Menu.Context>
             )}
           </For>
         </Popover.Content>

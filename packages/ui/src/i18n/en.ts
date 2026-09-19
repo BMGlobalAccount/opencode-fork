@@ -201,6 +201,8 @@ const source = {
   "ui.tool.questions.numbered": "Questions {{number}}",
   "ui.tool.agent": "{{type}} Agent",
   "ui.tool.agent.default": "Agent",
+  "ui.session.openSidePanel": "Open in side panel",
+  "ui.session.openNewTab": "Open in new tab",
   "ui.tool.agent.delegating": "Delegating agent…",
   "ui.tool.skill": "Skill",
 
