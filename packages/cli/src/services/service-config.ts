@@ -115,6 +115,15 @@ export const options = Effect.fnUntraced(function* (input: { readonly checkVersi
   }
 })
 
+export const registeredVersion = Effect.fnUntraced(function* () {
+  const { fs, file } = yield* paths
+  const text = yield* fs.readFileString(file).pipe(Effect.option)
+  if (Option.isNone(text)) return undefined
+  const registration = yield* decodeRegistration(text.value).pipe(Effect.option)
+  if (Option.isNone(registration)) return undefined
+  return registration.value.version
+})
+
 export const read = Effect.fn("cli.service-config.read")(function* () {
   const { fs, configFile, legacyConfigFile } = yield* paths
   if (legacyConfigFile) yield* migrateConfig(legacyConfigFile, configFile)
