@@ -318,8 +318,6 @@ export const dict = {
   "prompt.mode.shell.exit": "esc to exit",
   "session.child.promptDisabled": "Subagent sessions cannot be prompted.",
   "session.child.backToParent": "Back to main session.",
-  "session.subagent.openSidePanel": "Open in side panel",
-  "session.subagent.openNewTab": "Open in new tab",
 
   "prompt.example.1": "Fix a TODO in the codebase",
   "prompt.example.2": "What is the tech stack of this project?",

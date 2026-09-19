@@ -37,7 +37,6 @@ type Data = {
 }
 
 export type NavigateToSessionFn = (sessionID: string) => void
-export type OpenSessionInTabFn = (sessionID: string) => void
 
 export type SessionHrefFn = (sessionID: string) => string
 
@@ -50,7 +49,6 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     shellRunning?: (id: string) => boolean
     shellOutput?: (input: ShellOutputInput) => Promise<ShellOutputOutput>
     onNavigateToSession?: NavigateToSessionFn
-    onOpenSessionInTab?: OpenSessionInTabFn
     onSessionHref?: SessionHrefFn
   }) => {
     return {
@@ -64,7 +62,6 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
         return props.sessionID
       },
       navigateToSession: props.onNavigateToSession,
-      openSessionInTab: props.onOpenSessionInTab,
       sessionHref: props.onSessionHref,
       shellRunning: props.shellRunning,
       shellOutput: props.shellOutput,

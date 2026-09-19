@@ -34,7 +34,6 @@ import { getDirectory, getFilename } from "@opencode/util/path"
 import { checksum } from "@opencode/util/encode"
 import { Tooltip } from "@opencode/ui/tooltip"
 import { IconButton } from "@opencode/ui/icon-button"
-import { Menu } from "@opencode/ui/menu"
 import { TextShimmer } from "@opencode/ui/text-shimmer"
 import { changedFileDiff, patchFileGroups } from "../components/apply-patch-file"
 import { animate } from "motion"
@@ -1609,14 +1608,6 @@ ToolRegistry.register({
       open()
     }
 
-    const openInTab = (event: MouseEvent) => {
-      if (event.button !== 1 || !data.openSessionInTab) return
-      const id = childSessionId()
-      if (!id) return
-      event.preventDefault()
-      data.openSessionInTab(id)
-    }
-
     const trigger = () => (
       <div
         data-component="task-tool-card"
@@ -1661,40 +1652,17 @@ ToolRegistry.register({
       <Show
         when={delegating()}
         fallback={
-          <Menu.Context modal={false}>
-            <Menu.Context.Trigger as="div">
-              <BasicTool
-                icon="task"
-                status={props.status}
-                trigger={trigger()}
-                hideDetails
-                triggerAsLink
-                triggerHref={href()}
-                clickable={clickable()}
-                onTriggerClick={navigate}
-                onTriggerMouseDown={(event) => {
-                  if (event.button === 1 && data.openSessionInTab) event.preventDefault()
-                }}
-                onTriggerAuxClick={openInTab}
-                onTriggerKeyDown={navigateKey}
-              />
-            </Menu.Context.Trigger>
-            <Menu.Context.Portal>
-              <Menu.Context.Content>
-                <Menu.Item onSelect={open}>{i18n.t("ui.session.openSidePanel")}</Menu.Item>
-                <Show when={data.openSessionInTab}>
-                  <Menu.Item
-                    onSelect={() => {
-                      const id = childSessionId()
-                      if (id) data.openSessionInTab?.(id)
-                    }}
-                  >
-                    {i18n.t("ui.session.openNewTab")}
-                  </Menu.Item>
-                </Show>
-              </Menu.Context.Content>
-            </Menu.Context.Portal>
-          </Menu.Context>
+          <BasicTool
+            icon="task"
+            status={props.status}
+            trigger={trigger()}
+            hideDetails
+            triggerAsLink={!!href()}
+            triggerHref={href()}
+            clickable={clickable()}
+            onTriggerClick={navigate}
+            onTriggerKeyDown={navigateKey}
+          />
         }
       >
         <div

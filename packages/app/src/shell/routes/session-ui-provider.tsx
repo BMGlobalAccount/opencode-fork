@@ -53,10 +53,6 @@ export function SessionUIProvider(
     await data.session.sync(sessionID).catch(() => undefined)
     navigate(href(sessionID))
   }
-  const openSessionInTab = async (sessionID: string) => {
-    await data.session.sync(sessionID).catch(() => undefined)
-    tabs.addSessionTab({ server: props.server, sessionId: sessionID })
-  }
   const providers = useProviders(directory)
   const sessionUIData = createMemo(() => ({
     provider: providers.ready()
@@ -82,8 +78,6 @@ export function SessionUIProvider(
       shellRunning={(id) => !!data.shell.get(id)}
       shellOutput={(input) => serverSDK.api.shell.output(input)}
       onNavigateToSession={navigateToSession}
-      onOpenSessionInTab={openSessionInTab}
-      onSessionHref={href}
     >
       <MarkdownProvider readImage={readImage()}>
         <LocalProvider>{props.children}</LocalProvider>
