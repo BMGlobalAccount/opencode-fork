@@ -58,7 +58,7 @@ test("the hosted app hands HTTP-only pairing links over to the server's own web 
     requests.push(route.request().url())
     await route.abort()
   })
-  const info = { urls: [lan, "http://127.0.0.1:49374"], username: "opencode", password: "lan-secret" }
+  const info = { urls: [lan], username: "opencode", password: "lan-secret" }
   const fragment = Buffer.from(JSON.stringify(info)).toString("base64url")
 
   await page.goto(`${hosted}/connect#${fragment}`)

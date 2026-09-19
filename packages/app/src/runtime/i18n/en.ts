@@ -442,10 +442,8 @@ export const dict = {
     "Could not open the camera. Allow camera access or enter your connection details manually.",
   "server.connect.local.title": "This server is on a local network",
   "server.connect.local.description":
-    "app.opencode.ai can't reach HTTP servers on your local network. Open the server's own web interface to continue on this device.",
+    "This page can't reach HTTP servers on your local network. Open the server's own web interface to continue on this device.",
   "server.connect.local.open": "Open on local network",
-  "server.connect.local.fix":
-    "To pair from anywhere, share the server over HTTPS with Tailscale from the desktop app's Pairing settings.",
   "server.connect.local.loopback.title": "This server only listens on localhost",
   "server.connect.local.loopback.description":
     "Other devices can't reach a server that only listens on localhost. Opening it will only work on the computer running OpenCode.",

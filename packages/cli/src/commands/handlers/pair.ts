@@ -2,6 +2,7 @@ import { EOL } from "os"
 import { Effect, Option } from "effect"
 import { Service } from "@opencode/client/effect/service"
 import { OpenCode } from "@opencode/client/promise"
+import { base64Encode } from "@opencode/util/encode"
 import { renderUnicodeCompact } from "uqr"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
@@ -19,7 +20,7 @@ export default Runtime.handler(
         )).urls
     const info = { urls, username: "opencode", password }
     // Fragment, not query: the credential must never reach app.opencode.ai.
-    const link = `https://app.opencode.ai/connect#${Buffer.from(JSON.stringify(info)).toString("base64url")}`
+    const link = `https://app.opencode.ai/connect#${base64Encode(JSON.stringify(info))}`
     process.stdout.write(
       [
         "",

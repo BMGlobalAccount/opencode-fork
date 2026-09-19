@@ -11,8 +11,7 @@ TUI. It's available by default and password protected.
 ```bash
 $ opencode pair
 
-  URLs      http://192.168.1.42:49374
-            http://127.0.0.1:49374
+  URLs      http://127.0.0.1:49374
   Username  opencode
   Password  ********
 
@@ -23,10 +22,9 @@ $ opencode pair
   Link      https://app.opencode.ai/connect#...
 ```
 
-The QR code and link carry the connection details, so scanning it with a phone
-camera opens the OpenCode mobile app when installed and the web app otherwise.
-For a server on your local network, the web app offers to open the server's own
-web UI instead.
+The QR code is an `app.opencode.ai` link carrying the connection details, so a
+phone camera can open it. For a server on your local network, the page offers to
+open the server's own web UI instead.
 
 By default the server runs on port 49374 and listens only on localhost. You can
 change this config with the `opencode service` command.

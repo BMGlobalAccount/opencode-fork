@@ -39,7 +39,7 @@ export function pairingUrl(
 }
 
 export function decodePairingScan(value: string) {
-  const url = URL.parse(value.trim())
+  const url = URL.parse(value)
   if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) return decodePairingCode(value)
   return decodePairingUrl(url.search, url.origin) ?? decodePairingUrl(url.hash)
 }
