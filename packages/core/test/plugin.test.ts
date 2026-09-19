@@ -471,39 +471,6 @@ it.effect("normalizes Promise plugin API inputs through JSON", () =>
   }),
 )
 
-it.live("adapts Promise key validation failures into authorization errors before persistence", () =>
-  Effect.gen(function* () {
-    const plugins = yield* Plugin.Service
-    const integrations = yield* Integration.Service
-    const credentials = yield* Credential.Service
-    const integrationID = Integration.ID.make("promise-key")
-    yield* plugins.activate([
-      {
-        ...fromPromise({
-          id: "promise-key",
-          async setup(ctx) {
-            await ctx.integration.transform((editor) =>
-              editor.method.update({
-                integrationID,
-                method: { type: "key" },
-                async validate(credential) {
-                  if (credential.key !== "valid") throw new Error("Invalid provider key")
-                },
-              }),
-            )
-          },
-        }),
-        revision: "1",
-      },
-    ])
-    const error = yield* integrations.connection.key({ integrationID, key: "invalid" }).pipe(Effect.flip)
-    expect(error.message).toBe("Invalid provider key")
-    expect(yield* credentials.list(integrationID)).toEqual([])
-    yield* integrations.connection.key({ integrationID, key: "valid" })
-    expect(yield* credentials.list(integrationID)).toHaveLength(1)
-  }),
-)
-
 it.effect("reloading a plugin replaces its command implementation", () =>
   Effect.gen(function* () {
     const plugins = yield* Plugin.Service

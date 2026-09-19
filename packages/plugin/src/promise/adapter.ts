@@ -393,18 +393,7 @@ export function fromPromise(plugin: Plugin) {
                     method: {
                       list: editor.method.list,
                       update: (input) => {
-                        if ("validate" in input) {
-                          const validate = input.validate
-                          return editor.method.update({
-                            ...input,
-                            validate:
-                              validate === undefined
-                                ? undefined
-                                : (credential) =>
-                                    Effect.tryPromise({ try: () => validate(credential), catch: (cause) => cause }),
-                          })
-                        }
-                        if (!("authorize" in input)) return editor.method.update({ ...input, validate: undefined })
+                        if (!("authorize" in input)) return editor.method.update(input)
                         const refresh = input.refresh
                         editor.method.update({
                           ...input,

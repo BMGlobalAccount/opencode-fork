@@ -1,9 +1,7 @@
 import { chmod } from "node:fs/promises"
 import { Agent } from "@opencode/core/agent"
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Schedule, Schema } from "effect"
-import { TestClock } from "effect/testing"
-import { HttpClient } from "effect/unstable/http"
+import { Effect, Schedule, Schema } from "effect"
 import { Config } from "@opencode/core/config"
 import { ConfigProviderPlugin } from "@opencode/core/config/plugin/provider"
 import { Bus } from "@opencode/core/bus"
@@ -217,330 +215,6 @@ const keyCredential = Effect.gen(function* () {
 })
 
 describe("AzurePlugin", () => {
-  for (const resourceName of [
-    "https://example.openai.azure.com",
-    "bad/name",
-    "bad_name",
-    "name-",
-    "-name",
-    "a".repeat(65),
-  ]) {
-    it.live(`rejects invalid API-key resource names before requesting or saving: ${resourceName}`, () =>
-      withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-        withAzure(
-          () => Response.json({ data: [] }),
-          ({ endpoints, requests }) =>
-            Effect.gen(function* () {
-              yield* addPlugin(endpoints)
-              const integrations = yield* Integration.Service
-              const credentials = yield* Credential.Service
-              const integrationID = Integration.ID.make("azure")
-              const error = yield* integrations.connection
-                .key({
-                  integrationID,
-                  key: "secret",
-                  answer: { resourceName },
-                })
-                .pipe(Effect.flip)
-              expect(error.message).toContain("Invalid Azure resource name")
-              expect(requests).toEqual([])
-              expect(yield* credentials.list(integrationID)).toEqual([])
-            }),
-        ),
-      ),
-    )
-  }
-
-  it.live("rejects invalid Entra resource names before invoking Azure CLI", () => {
-    const commands: string[][] = []
-    return withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      withAzureCommands(
-        (args) => {
-          commands.push([...args])
-          return cliTokens(args)
-        },
-        () =>
-          Effect.gen(function* () {
-            yield* addPlugin()
-            const integrations = yield* Integration.Service
-            const credentials = yield* Credential.Service
-            const integrationID = Integration.ID.make("azure")
-            const attempt = yield* integrations.oauth.connect({
-              integrationID,
-              methodID: Integration.MethodID.make("azure-cli"),
-              answer: { resourceName: "https://wrong.example" },
-            })
-            const status = yield* eventually(
-              integrations.oauth.status({ integrationID, attemptID: attempt.attemptID }).pipe(Effect.orDie),
-              (status) => status.status !== "pending",
-            )
-            expect(status).toMatchObject({
-              status: "failed",
-              message: expect.stringContaining("Invalid Azure resource name"),
-            })
-            expect(commands).toEqual([])
-            expect(yield* credentials.list(integrationID)).toEqual([])
-          }),
-      ),
-    )
-  })
-
-  for (const failure of [
-    { status: 401, message: "rejected" },
-    { status: 403, message: "denied access" },
-    { status: 404, message: "was not found" },
-    { status: 429, message: "rate limited" },
-    { status: 503, message: "temporarily unavailable" },
-  ]) {
-    for (const method of ["key", "oauth"] as const) {
-      it.live(`reports HTTP ${failure.status} while connecting with ${method} without saving credentials`, () =>
-        withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-          withAzureCommands(cliTokens, () =>
-            withAzure(
-              () => new Response("Azure error", { status: failure.status }),
-              ({ endpoints, requests }) =>
-                Effect.gen(function* () {
-                  yield* addPlugin(endpoints)
-                  const integrations = yield* Integration.Service
-                  const credentials = yield* Credential.Service
-                  const integrationID = Integration.ID.make("azure")
-                  if (method === "key") {
-                    const error = yield* integrations.connection
-                      .key({
-                        integrationID,
-                        key: "secret",
-                        answer: { resourceName: "wrong-resource" },
-                      })
-                      .pipe(Effect.flip)
-                    expect(error.message).toContain(failure.message)
-                    expect(error.message).toContain("wrong-resource")
-                  }
-                  if (method === "oauth") {
-                    const attempt = yield* integrations.oauth.connect({
-                      integrationID,
-                      methodID: Integration.MethodID.make("azure-cli"),
-                      answer: { resourceName: "wrong-resource" },
-                    })
-                    const status = yield* eventually(
-                      integrations.oauth.status({ integrationID, attemptID: attempt.attemptID }).pipe(Effect.orDie),
-                      (status) => status.status !== "pending",
-                    )
-                    expect(status).toMatchObject({
-                      status: "failed",
-                      message: expect.stringContaining(failure.message),
-                    })
-                  }
-                  expect(requests.map((request) => request.path)).toEqual(["/openai/v1/models"])
-                  expect(yield* credentials.list(integrationID)).toEqual([])
-                }),
-            ),
-          ),
-        ),
-      )
-    }
-  }
-
-  it.effect("times out a stalled connection with an actionable error", () =>
-    withEnv({ AZURE_RESOURCE_NAME: "test-resource", AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      Effect.gen(function* () {
-        const started = yield* Deferred.make<void>()
-        yield* addPlugin().pipe(
-          Effect.provideService(
-            HttpClient.HttpClient,
-            HttpClient.make(() => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))),
-          ),
-        )
-        const integrations = yield* Integration.Service
-        const credentials = yield* Credential.Service
-        const integrationID = Integration.ID.make("azure")
-        const connecting = yield* integrations.connection.key({ integrationID, key: "secret" }).pipe(Effect.forkScoped)
-        yield* Deferred.await(started)
-        yield* TestClock.adjust("10 seconds")
-        const error = yield* Fiber.join(connecting).pipe(Effect.flip)
-        expect(error.message).toContain("did not respond within 10 seconds")
-        expect(yield* credentials.list(integrationID)).toEqual([])
-      }),
-    ),
-  )
-
-  it.live("reports unreachable resources without saving an API key", () =>
-    withEnv({ AZURE_RESOURCE_NAME: "test-resource", AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      Effect.gen(function* () {
-        yield* addPlugin()
-        const integrations = yield* Integration.Service
-        const credentials = yield* Credential.Service
-        const integrationID = Integration.ID.make("azure")
-        const error = yield* integrations.connection.key({ integrationID, key: "secret" }).pipe(Effect.flip)
-        expect(error.message).toContain("Could not reach Azure resource")
-        expect(error.message).toContain("private endpoint/DNS")
-        expect(yield* credentials.list(integrationID)).toEqual([])
-      }),
-    ),
-  )
-
-  it.live("reports a logged-out Azure CLI session without saving a connection", () =>
-    withEnv({ AZURE_RESOURCE_NAME: "test-resource", AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      withAzureCommands(
-        () => new Error("Please run az login"),
-        () =>
-          Effect.gen(function* () {
-            yield* addPlugin()
-            const integrations = yield* Integration.Service
-            const credentials = yield* Credential.Service
-            const integrationID = Integration.ID.make("azure")
-            const attempt = yield* integrations.oauth.connect({
-              integrationID,
-              methodID: Integration.MethodID.make("azure-cli"),
-            })
-            const status = yield* eventually(
-              integrations.oauth.status({ integrationID, attemptID: attempt.attemptID }).pipe(Effect.orDie),
-              (status) => status.status !== "pending",
-            )
-            expect(status).toMatchObject({ status: "failed", message: expect.stringContaining("Run `az login`") })
-            expect(yield* credentials.list(integrationID)).toEqual([])
-          }),
-      ),
-    ),
-  )
-
-  it.live("gets a fresh Azure CLI token when reconnecting after a rejected token", () => {
-    const commands: string[][] = []
-    return withEnv({ AZURE_RESOURCE_NAME: "test-resource", AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      withAzureCommands(
-        (args) => {
-          commands.push([...args])
-          return { ...cliTokens(args), accessToken: commands.length === 1 ? "stale" : "fresh" }
-        },
-        () =>
-          withAzure(
-            (request) =>
-              request.authorization === "Bearer stale"
-                ? new Response("Unauthorized", { status: 401 })
-                : Response.json({ data: [] }),
-            ({ endpoints }) =>
-              Effect.gen(function* () {
-                yield* addPlugin(endpoints)
-                const integrations = yield* Integration.Service
-                const credentials = yield* Credential.Service
-                const integrationID = Integration.ID.make("azure")
-                for (const expected of ["failed", "complete"] as const) {
-                  const attempt = yield* integrations.oauth.connect({
-                    integrationID,
-                    methodID: Integration.MethodID.make("azure-cli"),
-                  })
-                  const status = yield* eventually(
-                    integrations.oauth.status({ integrationID, attemptID: attempt.attemptID }).pipe(Effect.orDie),
-                    (status) => status.status !== "pending",
-                  )
-                  expect(status.status).toBe(expected)
-                }
-                expect(commands).toHaveLength(2)
-                expect((yield* credentials.list(integrationID)).map((credential) => credential.value)).toEqual([
-                  expect.objectContaining({ access: "fresh" }),
-                ])
-              }),
-          ),
-      ),
-    )
-  })
-
-  it.live("validates resource access without requiring deployment discovery to succeed", () =>
-    withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      withAzure(
-        (request) =>
-          request.path.endsWith("/v1/models")
-            ? Response.json({ data: [] })
-            : new Response("Not found", { status: 404 }),
-        ({ endpoints, requests }) =>
-          Effect.gen(function* () {
-            yield* addPlugin(endpoints)
-            const integrations = yield* Integration.Service
-            const credentials = yield* Credential.Service
-            const integrationID = Integration.ID.make("azure")
-            yield* integrations.connection.key({
-              integrationID,
-              key: "secret",
-              answer: { resourceName: "test-resource" },
-            })
-            expect(requests[0]).toMatchObject({ path: "/openai/v1/models", key: "secret", authorization: null })
-            expect(yield* credentials.list(integrationID)).toHaveLength(1)
-          }),
-      ),
-    ),
-  )
-
-  it.effect("validates a resource name supplied by configuration before connecting", () =>
-    withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      Effect.gen(function* () {
-        const providers = yield* Provider.Service
-        yield* providers.transform((editor) =>
-          editor.update(Provider.ID.azure, (provider) => {
-            provider.settings = { resourceName: "https://not-a-resource" }
-          }),
-        )
-        yield* addPlugin()
-        const integrations = yield* Integration.Service
-        const error = yield* integrations.connection
-          .key({ integrationID: Integration.ID.make("azure"), key: "secret" })
-          .pipe(Effect.flip)
-        expect(error.message).toContain("Invalid Azure resource name")
-      }),
-    ),
-  )
-
-  it.live("rejects a malformed resource response with an actionable error", () =>
-    withEnv({ AZURE_RESOURCE_NAME: "test-resource", AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      withAzure(
-        () => Response.json({ error: "unexpected body" }),
-        ({ endpoints }) =>
-          Effect.gen(function* () {
-            yield* addPlugin(endpoints)
-            const integrations = yield* Integration.Service
-            const credentials = yield* Credential.Service
-            const integrationID = Integration.ID.make("azure")
-            const error = yield* integrations.connection.key({ integrationID, key: "secret" }).pipe(Effect.flip)
-            expect(error.message).toContain("returned an invalid response")
-            expect(yield* credentials.list(integrationID)).toEqual([])
-          }),
-      ),
-    ),
-  )
-
-  it.live("keeps custom endpoint connections local and does not require a resource name", () =>
-    withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
-      withAzureCommands(cliTokens, () =>
-        withAzure(
-          () => new Response("Not found", { status: 404 }),
-          ({ endpoints, requests }) =>
-            Effect.gen(function* () {
-              const providers = yield* Provider.Service
-              const integrations = yield* Integration.Service
-              const credentials = yield* Credential.Service
-              yield* providers.transform((editor) =>
-                editor.update(Provider.ID.azure, (provider) => {
-                  provider.settings = { baseURL: "https://gateway.example/azure" }
-                }),
-              )
-              yield* addPlugin(endpoints)
-              const integrationID = Integration.ID.make("azure")
-              yield* integrations.connection.key({ integrationID, key: "secret" })
-              const attempt = yield* integrations.oauth.connect({
-                integrationID,
-                methodID: Integration.MethodID.make("azure-cli"),
-              })
-              const status = yield* eventually(
-                integrations.oauth.status({ integrationID, attemptID: attempt.attemptID }).pipe(Effect.orDie),
-                (status) => status.status !== "pending",
-              )
-              expect(status.status).toBe("complete")
-              expect(yield* credentials.list(integrationID)).toHaveLength(2)
-              expect(requests).toEqual([])
-            }),
-        ),
-      ),
-    ),
-  )
-
   it.effect("registers a resource name form when the environment does not provide one", () =>
     withEnv({ AZURE_RESOURCE_NAME: undefined, AZURE_COGNITIVE_SERVICES_RESOURCE_NAME: undefined }, () =>
       Effect.gen(function* () {
@@ -637,46 +311,37 @@ describe("AzurePlugin", () => {
           }
         },
         () =>
-          withAzure(
-            () => Response.json({ data: [] }),
-            ({ endpoints, requests }) =>
-              Effect.gen(function* () {
-                yield* addPlugin(endpoints)
-                const integrations = yield* Integration.Service
-                const integrationID = Integration.ID.make("azure")
-                const attempt = yield* integrations.oauth.connect({
-                  integrationID,
-                  methodID: Integration.MethodID.make("azure-cli"),
-                  answer: { resourceName: "test-resource" },
-                })
-                yield* Effect.gen(function* () {
-                  const status = yield* integrations.oauth.status({ integrationID, attemptID: attempt.attemptID })
-                  if (status.status !== "complete")
-                    return yield* Effect.fail(new Error("Azure CLI authorization pending"))
-                }).pipe(Effect.retry({ times: 1500, schedule: Schedule.spaced("1 millis") }))
+          Effect.gen(function* () {
+            yield* addPlugin()
+            const integrations = yield* Integration.Service
+            const integrationID = Integration.ID.make("azure")
+            const attempt = yield* integrations.oauth.connect({
+              integrationID,
+              methodID: Integration.MethodID.make("azure-cli"),
+              answer: { resourceName: "test-resource" },
+            })
+            yield* Effect.gen(function* () {
+              const status = yield* integrations.oauth.status({ integrationID, attemptID: attempt.attemptID })
+              if (status.status !== "complete") return yield* Effect.fail(new Error("Azure CLI authorization pending"))
+            }).pipe(Effect.retry({ times: 1500, schedule: Schedule.spaced("1 millis") }))
 
-                const credential = (yield* (yield* Credential.Service).list(integrationID))[0]?.value
-                expect(credential).toMatchObject({
-                  type: "oauth",
-                  access: "legacy-cli-token",
-                  metadata: { resourceName: "test-resource" },
-                })
-                expect(commands).toEqual([
-                  [
-                    "account",
-                    "get-access-token",
-                    "--scope",
-                    "https://cognitiveservices.azure.com/.default",
-                    "--output",
-                    "json",
-                  ],
-                ])
-                expect(requests[0]).toMatchObject({
-                  path: "/openai/v1/models",
-                  authorization: "Bearer legacy-cli-token",
-                })
-              }),
-          ),
+            const credential = (yield* (yield* Credential.Service).list(integrationID))[0]?.value
+            expect(credential).toMatchObject({
+              type: "oauth",
+              access: "legacy-cli-token",
+              metadata: { resourceName: "test-resource" },
+            })
+            expect(commands).toEqual([
+              [
+                "account",
+                "get-access-token",
+                "--scope",
+                "https://cognitiveservices.azure.com/.default",
+                "--output",
+                "json",
+              ],
+            ])
+          }),
       ),
     )
   })

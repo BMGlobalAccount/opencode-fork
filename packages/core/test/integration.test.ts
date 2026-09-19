@@ -218,65 +218,6 @@ describe("Integration", () => {
     }),
   )
 
-  it.effect("validates a key before saving it and keeps the active account when validation fails", () =>
-    Effect.gen(function* () {
-      const integrations = yield* Integration.Service
-      const credentials = yield* Credential.Service
-      const integrationID = Integration.ID.make("validated")
-      const seen: Credential.Key[] = []
-      yield* integrations.transform((editor) =>
-        editor.method.update({
-          integrationID,
-          method: { type: "key", form: [{ type: "string", key: "resource", required: true }] },
-          validate: (value) =>
-            Effect.gen(function* () {
-              seen.push(value)
-              if (value.key !== "valid") return yield* Effect.fail(new Error("Resource is not accessible"))
-            }),
-        }),
-      )
-      yield* integrations.connection.key({ integrationID, key: "valid", answer: { resource: "first" } })
-      const active = yield* integrations.connection.active(integrationID)
-      expect(active).toBeDefined()
-      const error = yield* integrations.connection
-        .key({
-          integrationID,
-          key: "invalid",
-          answer: { resource: "second" },
-        })
-        .pipe(Effect.flip)
-      expect(error.message).toBe("Resource is not accessible")
-      expect(yield* integrations.connection.active(integrationID)).toEqual(active)
-      expect(yield* credentials.list(integrationID)).toHaveLength(1)
-      if (active) yield* integrations.connection.resolve(active)
-      expect(seen.map((value) => value.configuration?.resource)).toEqual(["first", "second"])
-    }),
-  )
-
-  it.effect("restores key validation when an overriding registration is disposed", () =>
-    Effect.gen(function* () {
-      const integrations = yield* Integration.Service
-      const integrationID = Integration.ID.make("validated")
-      yield* integrations.transform((editor) =>
-        editor.method.update({
-          integrationID,
-          method: { type: "key" },
-          validate: () => Effect.fail(new Error("Validation denied")),
-        }),
-      )
-      const override = yield* integrations.transform((editor) =>
-        editor.method.update({
-          integrationID,
-          method: { type: "key" },
-        }),
-      )
-      yield* integrations.connection.key({ integrationID, key: "unvalidated" })
-      yield* override.dispose
-      const error = yield* integrations.connection.key({ integrationID, key: "denied" }).pipe(Effect.flip)
-      expect(error.message).toBe("Validation denied")
-    }),
-  )
-
   it.live("runs command authentication and stores the final output line", () =>
     Effect.gen(function* () {
       const integrations = yield* Integration.Service

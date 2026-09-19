@@ -1,5 +1,5 @@
-import { Cause, Clock, Effect, Option, Schedule, Schema, Semaphore, Stream } from "effect"
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { Clock, Effect, Option, Schedule, Schema, Semaphore, Stream } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Form } from "@opencode/schema/form"
@@ -21,7 +21,7 @@ const foundryScope = "https://ai.azure.com/.default"
 const managementScope = "https://management.azure.com/.default"
 const methodID = Integration.MethodID.make("azure-cli")
 // A resource name becomes a hostname label and a query literal, so anything else never leaves the process.
-const resourcePattern = /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,62}[a-zA-Z0-9])?$/
+const resourcePattern = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/
 const decodeJSON = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))
 const decodeToken = Schema.decodeUnknownEffect(
   Schema.Struct({
@@ -30,7 +30,7 @@ const decodeToken = Schema.decodeUnknownEffect(
     expiresOn: Schema.optional(Schema.NonEmptyString),
   }),
 )
-const ResourceList = Schema.Struct({ data: Schema.Array(Schema.Unknown) })
+const ResourceDeployments = Schema.Struct({ data: Schema.Array(Schema.Unknown) })
 const decodeResourceDeployment = Schema.decodeUnknownOption(
   Schema.Struct({ id: Schema.NonEmptyString, model: Schema.NonEmptyString, status: Schema.String }),
 )
@@ -104,20 +104,10 @@ export function make(
         if (cached && cached.expires - now > 5 * 60_000) return cached
         const result = yield* command(["account", "get-access-token", "--scope", scope, "--output", "json"]).pipe(
           Effect.flatMap(decodeToken),
-          Effect.mapError(
-            (cause) =>
-              new Error(
-                cause instanceof AppProcess.AppProcessError
-                  ? "Azure CLI could not obtain an access token. Run `az login` for the resource's tenant and try again."
-                  : "Azure CLI returned an invalid access token. Update Azure CLI and run `az login` again.",
-              ),
-          ),
         )
         const expires = result.expires_on !== undefined ? result.expires_on * 1000 : Date.parse(result.expiresOn ?? "")
         if (!Number.isFinite(expires))
-          return yield* Effect.fail(
-            new Error("Azure CLI returned an invalid token expiration. Update Azure CLI and run `az login` again."),
-          )
+          return yield* Effect.fail(new Error("Azure CLI returned an invalid token expiration"))
         const refreshed = { access: result.accessToken, expires }
         tokens.set(scope, refreshed)
         return refreshed
@@ -157,10 +147,7 @@ export function make(
                 ] as const,
             ),
           ),
-        ).pipe(
-          Stream.runCollect,
-          Effect.mapError((cause) => azureRequestError(cause, "Azure resource discovery", "management")),
-        )
+        ).pipe(Stream.runCollect)
       })
 
       // Runs only while connecting, so listing Azure resources never costs anything at startup.
@@ -177,27 +164,6 @@ export function make(
           ),
         )
       })
-
-      const resourceRequest = (url: string, credential: Credential.Value) =>
-        http.execute(
-          HttpClientRequest.get(url).pipe(
-            HttpClientRequest.acceptJson,
-            HttpClientRequest.setHeader("User-Agent", App.useragent(ctx.app)),
-            credential.type === "key"
-              ? HttpClientRequest.setHeader("api-key", credential.key)
-              : HttpClientRequest.bearerToken(credential.access),
-          ),
-        )
-
-      // The supported models endpoint validates resource access without requiring deployment-list permissions.
-      // This runs only on an explicit connection attempt; discovery remains background-only.
-      const validateAccess = (resource: string, credential: Credential.Value) =>
-        resourceRequest(`${endpoints.resource(resource)}/v1/models`, credential).pipe(
-          Effect.flatMap(HttpClientResponse.schemaBodyJson(ResourceList)),
-          Effect.timeout("10 seconds"),
-          Effect.asVoid,
-          Effect.mapError((cause) => azureRequestError(cause, `Azure resource "${resource}"`, credential.type)),
-        )
 
       const available = Boolean(which("az"))
       const form = (cli: boolean) =>
@@ -231,15 +197,6 @@ export function make(
         editor.method.update({
           integrationID: Provider.ID.azure,
           method: { type: "key", label: "API key", form: form(false) },
-          validate: (credential) =>
-            Effect.gen(function* () {
-              const resource = credentialResource(credential) ?? resolveResourceName(configured)
-              if (typeof configured?.baseURL === "string") return
-              if (!resource) return yield* Effect.fail(new Error("Azure resource name is required"))
-              const invalid = resourceNameError(resource)
-              if (invalid) return yield* Effect.fail(invalid)
-              yield* validateAccess(resource, credential)
-            }),
         })
         if (!available) return
         editor.method.update({
@@ -256,28 +213,20 @@ export function make(
               url: "",
               instructions: "Sign in with `az login` before continuing.",
               callback: Effect.gen(function* () {
-                // Reconnecting must observe a new `az login` session, including a change of tenant.
-                tokens.clear()
                 const resourceName =
                   (typeof answer.resourceName === "string" ? answer.resourceName.trim() : "") ||
                   resolveResourceName(configured) ||
                   (typeof configured?.baseURL === "string" ? undefined : yield* detect())
-                if (!resourceName && typeof configured?.baseURL !== "string")
-                  return yield* Effect.fail(new Error("Azure resource name is required"))
-                const invalid = resourceName && resourceNameError(resourceName)
-                if (invalid) return yield* Effect.fail(invalid)
+                if (!resourceName) return yield* Effect.fail(new Error("Azure resource name is required"))
                 const current = yield* token(cognitiveScope)
-                const credential = Credential.OAuth.make({
+                return Credential.OAuth.make({
                   type: "oauth",
                   methodID,
                   access: current.access,
                   refresh: "azure-cli",
                   expires: current.expires,
-                  ...(resourceName ? { metadata: { resourceName } } : {}),
+                  metadata: { resourceName },
                 })
-                if (resourceName && typeof configured?.baseURL !== "string")
-                  yield* validateAccess(resourceName, credential)
-                return credential
               }),
             }),
           refresh: (credential) =>
@@ -300,12 +249,7 @@ export function make(
 
       const managementDeployments = Effect.fn("AzurePlugin.managementDeployments")(function* (resource: string) {
         const account = (yield* accounts(resource))[0]
-        if (!account)
-          return yield* Effect.fail(
-            new Error(
-              `Azure resource "${resource}" was not found in this Azure CLI tenant, or you do not have read access. Check the resource name and run \`az login --tenant TENANT_ID\` for its tenant.`,
-            ),
-          )
+        if (!account) return yield* Effect.fail(new Error(`Azure resource "${resource}" was not found`))
         return yield* Stream.paginate(
           `${endpoints.management}${account.id}/deployments?api-version=2024-10-01`,
           (url) =>
@@ -325,12 +269,7 @@ export function make(
                   ] as const,
               ),
             ),
-        ).pipe(
-          Stream.runCollect,
-          Effect.mapError((cause) =>
-            azureRequestError(cause, `Azure resource "${resource}" deployments`, "management"),
-          ),
-        )
+        ).pipe(Stream.runCollect)
       })
 
       const deployments = Effect.fn("AzurePlugin.deployments")(function* (
@@ -338,23 +277,31 @@ export function make(
         resource: string,
         credential: Credential.Value,
       ) {
-        return yield* resourceRequest(url, credential).pipe(
-          Effect.flatMap(HttpClientResponse.schemaBodyJson(ResourceList)),
-          Effect.timeout("10 seconds"),
-          Effect.map((response) =>
-            response.data.flatMap((raw): Deployment[] => {
-              const item = Option.getOrUndefined(decodeResourceDeployment(raw))
-              return item?.status === "succeeded" ? [{ name: item.id, model: item.model }] : []
-            }),
-          ),
-          // Azure documents the management API as the deployment inventory, but only an Azure CLI session can
-          // reach it. The resource's own inventory comes first because it also answers to an API key.
-          Effect.catch((cause) =>
-            credential.type === "oauth"
-              ? managementDeployments(resource)
-              : Effect.fail(azureRequestError(cause, `Azure resource "${resource}" deployments`, credential.type)),
-          ),
-        )
+        return yield* http
+          .execute(
+            HttpClientRequest.get(url).pipe(
+              HttpClientRequest.acceptJson,
+              HttpClientRequest.setHeader("User-Agent", App.useragent(ctx.app)),
+              credential.type === "key"
+                ? HttpClientRequest.setHeader("api-key", credential.key)
+                : HttpClientRequest.bearerToken(credential.access),
+            ),
+          )
+          .pipe(
+            Effect.flatMap(HttpClientResponse.schemaBodyJson(ResourceDeployments)),
+            Effect.timeout("10 seconds"),
+            Effect.map((response) =>
+              response.data.flatMap((raw): Deployment[] => {
+                const item = Option.getOrUndefined(decodeResourceDeployment(raw))
+                return item?.status === "succeeded" ? [{ name: item.id, model: item.model }] : []
+              }),
+            ),
+            // Azure documents the management API as the deployment inventory, but only an Azure CLI session can
+            // reach it. The resource's own inventory comes first because it also answers to an API key.
+            Effect.catch((cause) =>
+              credential.type === "oauth" ? managementDeployments(resource) : Effect.fail(cause),
+            ),
+          )
       })
 
       const sync = () =>
@@ -370,11 +317,12 @@ export function make(
             }
             const settings = (yield* providers.get(Provider.ID.azure))?.settings
             const name = loaded.resource ?? resolveResourceName(settings)
-            const invalid = name && resourceNameError(name)
-            if (current.connection && invalid) yield* Effect.logWarning(invalid.message)
             // A custom endpoint may expose other deployments than the resource does, so it keeps the catalog.
             const url =
-              current.connection && name !== undefined && !invalid && typeof settings?.baseURL !== "string"
+              current.connection &&
+              name !== undefined &&
+              resourcePattern.test(name) &&
+              typeof settings?.baseURL !== "string"
                 ? `${endpoints.resource(name)}/deployments?api-version=2022-12-01`
                 : undefined
             // Keep the last inventory through transient failures only for the same connection and resource.
@@ -530,48 +478,6 @@ export function make(
 }
 
 export const AzurePlugin = make()
-
-function resourceNameError(resource: string) {
-  if (resourcePattern.test(resource)) return
-  return new Error(
-    `Invalid Azure resource name "${resource}". Enter only the resource name (for example, "my-models"), not a URL. Use 1–64 letters, numbers or hyphens, starting and ending with a letter or number.`,
-  )
-}
-
-function azureRequestError(cause: unknown, target: string, auth: "key" | "oauth" | "management") {
-  if (Cause.isTimeoutError(cause))
-    return new Error(`${target} did not respond within 10 seconds. Check your network and try again.`)
-  if (Schema.isSchemaError(cause)) return new Error(`${target} returned an invalid response. Try again later.`)
-  if (!HttpClientError.isHttpClientError(cause))
-    return cause instanceof Error ? cause : new Error(`${target} could not be loaded. Try again.`)
-  if (cause.reason._tag === "TransportError")
-    return new Error(
-      `Could not reach ${target}. Check the resource name, network connection and private endpoint/DNS settings.`,
-    )
-  const status = cause.response?.status
-  if (status === 401)
-    return new Error(
-      auth === "key"
-        ? `${target} rejected the API key (HTTP 401). Check the resource name and use a key from that resource.`
-        : `${target} rejected the Azure CLI token (HTTP 401). Run \`az login\` for the resource's tenant and try again.`,
-    )
-  if (status === 403)
-    return new Error(
-      auth === "management"
-        ? `${target} denied access (HTTP 403). Your Azure CLI identity needs read access to the resource in the selected tenant.`
-        : `${target} denied access (HTTP 403). Check the resource's networking rules${auth === "oauth" ? " and your Cognitive Services OpenAI User or Cognitive Services User role" : " and that the API key belongs to this resource"}.`,
-    )
-  if (status === 404)
-    return new Error(
-      `${target} was not found (HTTP 404). Check the resource name, not the model or deployment name, and the Azure tenant.`,
-    )
-  if (status === 429) return new Error(`${target} is rate limited (HTTP 429). Wait and try again.`)
-  if (status !== undefined && status >= 500)
-    return new Error(`${target} is temporarily unavailable (HTTP ${status}). Try again later.`)
-  return new Error(
-    `${target} returned an unexpected response${status === undefined ? "" : ` (HTTP ${status})`}. Check your Azure configuration and try again.`,
-  )
-}
 
 function resolveResourceName(settings: Readonly<Record<string, unknown>> | undefined, fallback?: string) {
   const configured = settings?.resourceName

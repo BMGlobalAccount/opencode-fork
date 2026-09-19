@@ -330,29 +330,6 @@ If a request uses a token from the wrong tenant, sign in again with the required
 az login --tenant TENANT_ID
 ```
 
-### Connection errors
-
-When connecting a standard Azure resource, OpenCode validates its name and checks access through `/openai/v1/models`
-before saving the credential. These checks run only during `/connect`; startup and background deployment refreshes do
-not wait for them. A custom `settings.baseURL` skips the standard Azure endpoint check.
-
-```text
-/connect
-# Choose Azure, then enter the resource name only, such as my-models.
-```
-
-| Error | What to check |
-| --- | --- |
-| Invalid resource name | Enter the resource name, not its URL. Use letters, numbers and hyphens. |
-| HTTP 401 | Use an API key from that resource, or sign in with `az login` for its tenant. |
-| HTTP 403 | Check the resource's network restrictions and your Cognitive Services role. Management discovery also needs read access. |
-| HTTP 404 | Check the resource name; a model or deployment name does not identify the resource. |
-| Unreachable or timed out | Check DNS, private endpoint access and the network connection, then retry. |
-| HTTP 429 or 5xx | Wait and retry after Azure's rate limit or temporary outage clears. |
-
-An unsuccessful connection does not save a credential or replace the active account. Deployment discovery can still
-fall back to the catalog when the resource is accessible but its deployment inventory cannot be listed.
-
 ## Bedrock
 
 Amazon Bedrock uses the AWS default credential chain. A named AWS profile is the simplest durable setup; OpenCode also
