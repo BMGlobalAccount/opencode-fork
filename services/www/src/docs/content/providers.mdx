@@ -268,6 +268,10 @@ choose **Microsoft Entra ID (Azure CLI)** when connecting Azure.
 az login
 ```
 
+With this method you can leave the resource name empty. OpenCode then looks up the Azure OpenAI and Foundry resources
+of your Azure CLI session while connecting. It uses the resource when there is only one, and otherwise asks you to
+connect again and choose from the resources it found. The lookup only runs while connecting, never at startup.
+
 For a resource in another tenant or subscription, select both explicitly.
 
 ```bash
@@ -278,8 +282,27 @@ az account set --subscription NAME_OR_ID
 Instead of configuration, `AZURE_RESOURCE_NAME` supplies the resource name to the OpenCode server. The legacy
 `AZURE_COGNITIVE_SERVICES_RESOURCE_NAME` variable also works.
 
-OpenCode does not query Azure management APIs or discover deployments. If a deployment does not match its catalog
-model name, map an OpenCode model ID to the deployment with `modelID`.
+### Deployments
+
+Azure serves a model only through a deployment, so OpenCode lists the deployments of your resource and shows those
+instead of the whole Azure catalog. The list loads in the background after startup and after connecting, then refreshes
+every five minutes, so a new deployment appears without a restart.
+
+- Before the first successful list for a connection, the whole catalog stays available.
+- A temporary refresh failure keeps that connection's last complete inventory.
+- Switching accounts hides the previous account's inventory until the new connection is loaded.
+- Deployments inherit limits, costs, and capabilities from their catalog models.
+
+Deployment names are their model IDs. A name matching its catalog model, ignoring case, keeps the catalog ID;
+other names appear as IDs such as `azure/gpt-production`. These IDs stay stable when other deployments are added or
+removed.
+
+OpenCode first tries the resource's legacy deployment inventory with an API key or Entra ID. With the Azure CLI it
+falls back to the Azure management API, which needs read access to the resource. Discovery reads every page before
+publishing the list. A custom `settings.baseURL` keeps the catalog.
+
+Configure a deployment explicitly when its model is not in the catalog, such as a fine-tuned model, or to map a model ID
+to a deployment yourself. Explicitly configured models are always kept.
 
 ```jsonc title="opencode.jsonc"
 {
@@ -306,6 +329,29 @@ If a request uses a token from the wrong tenant, sign in again with the required
 ```bash
 az login --tenant TENANT_ID
 ```
+
+### Connection errors
+
+When connecting a standard Azure resource, OpenCode validates its name and checks access through `/openai/v1/models`
+before saving the credential. These checks run only during `/connect`; startup and background deployment refreshes do
+not wait for them. A custom `settings.baseURL` skips the standard Azure endpoint check.
+
+```text
+/connect
+# Choose Azure, then enter the resource name only, such as my-models.
+```
+
+| Error | What to check |
+| --- | --- |
+| Invalid resource name | Enter the resource name, not its URL. Use letters, numbers and hyphens. |
+| HTTP 401 | Use an API key from that resource, or sign in with `az login` for its tenant. |
+| HTTP 403 | Check the resource's network restrictions and your Cognitive Services role. Management discovery also needs read access. |
+| HTTP 404 | Check the resource name; a model or deployment name does not identify the resource. |
+| Unreachable or timed out | Check DNS, private endpoint access and the network connection, then retry. |
+| HTTP 429 or 5xx | Wait and retry after Azure's rate limit or temporary outage clears. |
+
+An unsuccessful connection does not save a credential or replace the active account. Deployment discovery can still
+fall back to the catalog when the resource is accessible but its deployment inventory cannot be listed.
 
 ## Bedrock
 

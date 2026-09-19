@@ -538,6 +538,22 @@ Reload integrations after external state used by a transform changes.
 await ctx.integration.reload()
 ```
 
+Key methods can provide an optional `validate` callback. It receives the proposed `Credential.Key`, including form
+answers in `configuration`, before the key is saved or selected. Throwing rejects the connection and preserves the
+active account; validation does not run when loading stored accounts.
+
+```ts
+await ctx.integration.transform((editor) => {
+  editor.method.update({
+    integrationID: "acme",
+    method: { type: "key", label: "API key" },
+    async validate(credential) {
+      if (!credential.key.trim()) throw new Error("API key is required")
+    },
+  })
+})
+```
+
 #### Reference
 
 Schemas: [`Integration.Info`](/api#schema-Integration.Info), [`Integration.Method`](/api#schema-Integration.Method),

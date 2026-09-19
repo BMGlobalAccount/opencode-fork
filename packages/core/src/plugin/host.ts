@@ -650,6 +650,7 @@ function methodImplementation(input: IntegrationMethodRegistration): Integration
   return {
     integrationID: Integration.ID.make(input.integrationID),
     method: input.method,
+    ...("validate" in input ? { validate: input.validate } : {}),
   }
 }
 

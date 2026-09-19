@@ -593,6 +593,21 @@ effect: (ctx) =>
   }),
 ```
 
+Key methods can provide an optional `validate` callback returning an Effect. It receives the proposed `Credential.Key`,
+including form answers in `configuration`, before persistence. A failure rejects the connection and preserves the active
+account; loading stored accounts does not call it.
+
+```ts
+yield* ctx.integration.transform((editor) => {
+  editor.method.update({
+    integrationID: "acme",
+    method: { type: "key", label: "API key" },
+    validate: (credential) =>
+      credential.key.trim() ? Effect.void : Effect.fail(new Error("API key is required")),
+  })
+})
+```
+
 Schemas: [`Integration.Info`](/api#schema-Integration.Info), [`Integration.Method`](/api#schema-Integration.Method),
 [`Connection.Info`](/api#schema-Connection.Info), [`Form.Answer`](/api#schema-Form.Answer).
 

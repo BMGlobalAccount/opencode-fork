@@ -68,6 +68,8 @@ export type IntegrationMethodRegistration =
   | {
       readonly integrationID: string
       readonly method: IntegrationKeyMethod
+      /** Validate a new key before it is stored or selected. */
+      readonly validate?: (credential: Credential.Key) => Effect.Effect<void, unknown>
     }
   | {
       readonly integrationID: string

@@ -79,6 +79,7 @@ export interface OAuthImplementation {
 export interface KeyImplementation {
   readonly integrationID: ID
   readonly method: KeyMethod
+  readonly validate?: (credential: Credential.Key) => Effect.Effect<void, unknown>
 }
 
 export interface CommandImplementation {
@@ -135,6 +136,7 @@ type Entry = {
   ref: Types.DeepMutable<Ref>
   methods: Types.DeepMutable<Method>[]
   implementations: Map<MethodID, Types.DeepMutable<OAuthImplementation>>
+  key?: KeyImplementation
 }
 
 type Data = {
@@ -299,7 +301,7 @@ const layer = Layer.effect(
         method: {
           list: (integrationID) => (editor.integrations.get(integrationID)?.methods as Method[] | undefined) ?? [],
           update: (implementation) => {
-            const current = editor.integrations.get(implementation.integrationID) ?? {
+            const current: Entry = editor.integrations.get(implementation.integrationID) ?? {
               ref: {
                 id: implementation.integrationID,
                 name: implementation.integrationID,
@@ -326,6 +328,13 @@ const layer = Layer.effect(
                 implementation as Types.DeepMutable<OAuthImplementation>,
               )
             }
+            if (implementation.method.type === "key") {
+              current.key = {
+                integrationID: implementation.integrationID,
+                method: implementation.method,
+                ...("validate" in implementation ? { validate: implementation.validate } : {}),
+              }
+            }
           },
           remove: (integrationID, method) => {
             const current = editor.integrations.get(integrationID)
@@ -338,6 +347,7 @@ const layer = Layer.effect(
             })
             if (index !== -1) current.methods.splice(index, 1)
             if (method.type === "oauth") current.implementations.delete(method.id)
+            if (method.type === "key") current.key = undefined
           },
         },
       }),
@@ -698,10 +708,8 @@ const layer = Layer.effect(
           return value
         }),
         key: Effect.fn("Integration.connection.key")(function* (input) {
-          const method = state
-            .get()
-            .integrations.get(input.integrationID)
-            ?.methods.find((method) => method.type === "key")
+          const implementation = state.get().integrations.get(input.integrationID)?.key
+          const method = implementation?.method
           if (!method) return yield* Effect.die(new Error(`Key method not found: ${input.integrationID}`))
           const answer = input.answer ?? {}
           if (method.form) {
@@ -711,14 +719,16 @@ const layer = Layer.effect(
           if (!method.form && Object.keys(answer).length > 0) {
             return yield* new AuthorizationError({ cause: new Error("Key method does not accept a form answer") })
           }
+          const value = Credential.Key.make({
+            type: "key",
+            key: input.key,
+            ...(Object.keys(answer).length > 0 ? { configuration: answer } : {}),
+          })
+          if (implementation.validate) yield* authorize(implementation.validate(value))
           yield* createCredential({
             integrationID: input.integrationID,
             label: input.label,
-            value: Credential.Key.make({
-              type: "key",
-              key: input.key,
-              ...(Object.keys(answer).length > 0 ? { configuration: answer } : {}),
-            }),
+            value,
           })
         }),
         activate: Effect.fn("Integration.connection.activate")((credentialID) => credentials.activate(credentialID)),
@@ -731,8 +741,7 @@ const layer = Layer.effect(
         connect: connectOAuth,
         status: Effect.fn("Integration.oauth.status")(function* (input) {
           const attempt = (yield* SynchronizedRef.get(attempts)).get(input.attemptID)
-          if (!attempt || attempt.integrationID !== input.integrationID)
-            return yield* new AttemptNotFoundError(input)
+          if (!attempt || attempt.integrationID !== input.integrationID) return yield* new AttemptNotFoundError(input)
           if (attempt.status === "failed") {
             return { status: attempt.status, message: attempt.message ?? "Authorization failed", time: attempt.time }
           }
@@ -777,8 +786,7 @@ const layer = Layer.effect(
         connect: connectCommand,
         status: Effect.fn("Integration.command.status")(function* (input) {
           const attempt = (yield* SynchronizedRef.get(commandAttempts)).get(input.attemptID)
-          if (!attempt || attempt.integrationID !== input.integrationID)
-            return yield* new AttemptNotFoundError(input)
+          if (!attempt || attempt.integrationID !== input.integrationID) return yield* new AttemptNotFoundError(input)
           if (attempt.status === "pending") {
             return {
               status: attempt.status,
