@@ -43,6 +43,12 @@ rollouts. Earlier inactive releases can be fallbacks, including manually deactiv
 releases; releases newer than the active release cannot. If no eligible artifact
 exists, it is omitted from listings and individual artifact requests return 404.
 
+An identified caller already running a release newer than its eligible fallback keeps
+that retained release. This prevents a client that received a newer build through the
+desktop, another network, or an earlier rollout check from being downgraded merely
+because its current IP maps to an earlier rollout cohort. Activating an older release
+still performs an intentional rollback once that active release is eligible.
+
 Minimum releases bypass rollout for clients that need them, and identified clients
 are not sent a fallback below their configured minimum. Rollout applies to all JSON
 endpoints and desktop manifests. Responses, including unavailable artifacts, are not cached.

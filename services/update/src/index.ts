@@ -109,8 +109,8 @@ export default {
 
 async function channel(db: D1Database, channel: string, current: string | undefined, cutoff: number) {
   const result = await db
-    .prepare(`${select} WHERE channel = ? AND (active = 1 OR minimum = 1) ORDER BY name, distribution`)
-    .bind(channel)
+    .prepare(`${select} WHERE channel = ? AND (active = 1 OR minimum = 1 OR version = ?) ORDER BY name, distribution`)
+    .bind(channel, currentArtifactVersion(current))
     .all<ArtifactRow>()
   const artifacts = await selectArtifacts(db, result.results, current, cutoff)
   if (!artifacts.length) return json({ error: "Channel not found" }, 404)
@@ -125,8 +125,10 @@ async function artifactName(
   cutoff: number,
 ) {
   const result = await db
-    .prepare(`${select} WHERE channel = ? AND name = ? AND (active = 1 OR minimum = 1) ORDER BY distribution`)
-    .bind(channel, name)
+    .prepare(
+      `${select} WHERE channel = ? AND name = ? AND (active = 1 OR minimum = 1 OR version = ?) ORDER BY distribution`,
+    )
+    .bind(channel, name, currentArtifactVersion(current))
     .all<ArtifactRow>()
   const artifacts = await selectArtifacts(db, result.results, current, cutoff)
   if (!artifacts.length) return json({ error: "Artifact not found" }, 404)
@@ -143,8 +145,10 @@ async function artifactDistribution(
   manifest?: string,
 ) {
   const result = await db
-    .prepare(`${select} WHERE channel = ? AND name = ? AND distribution = ? AND (active = 1 OR minimum = 1)`)
-    .bind(channel, name, distribution)
+    .prepare(
+      `${select} WHERE channel = ? AND name = ? AND distribution = ? AND (active = 1 OR minimum = 1 OR version = ?)`,
+    )
+    .bind(channel, name, distribution, currentArtifactVersion(current))
     .all<ArtifactRow>()
   const artifact = (await selectArtifacts(db, result.results, current, cutoff))[0]
   if (!artifact) return json({ error: "Artifact not found" }, 404)
@@ -185,10 +189,28 @@ async function selectArtifacts(db: D1Database, rows: ArtifactRow[], current: str
           const version = previous && releaseVersion(previous.version)
           if (!version || !floor || semver.lt(version, floor)) return minimum
         }
-        return previous
+        const retained = rows.find(
+          (row) =>
+            row.name === active.name &&
+            row.distribution === active.distribution &&
+            releaseVersion(row.version) === caller,
+        )
+        return selectRolloutFallback(current, previous, retained ?? null)
       }),
   )
   return artifacts.filter((artifact) => artifact !== null)
+}
+
+export function selectRolloutFallback<T extends { readonly version: string }>(
+  current: string | undefined,
+  fallback: T | null,
+  retained: T | null,
+) {
+  if (!current || !fallback) return fallback
+  const caller = releaseVersion(current)
+  const previous = releaseVersion(fallback.version)
+  if (!caller || !previous || !semver.gt(caller, previous)) return fallback
+  return retained
 }
 
 async function configureRollout(request: Request, env: Env, prefix: string) {
@@ -224,6 +246,10 @@ function releaseVersion(input: string) {
       (_, core, channel, build) => `${core}-${resolveChannel(channel)}.${build}`,
     ),
   )
+}
+
+function currentArtifactVersion(current: string | undefined) {
+  return current?.replace(/^v/, "") ?? ""
 }
 
 async function admin(request: Request, env: Env, prefix: string) {
