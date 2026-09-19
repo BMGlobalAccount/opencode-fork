@@ -5,6 +5,7 @@ import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { Config } from "../../config"
 import { Context, Effect, Fiber, FileSystem, Option, Queue } from "effect"
+import { ClientError } from "@opencode/client/promise"
 import { ServerConnection } from "../../services/server-connection"
 import { Updater } from "../../services/updater"
 import { UpdatePreflight } from "../../services/update-preflight"
@@ -142,23 +143,22 @@ function showConnectError(
   previousVersion: string | undefined,
   preflight: ReturnType<typeof UpdatePreflight.make>,
 ) {
-  const text = connectText(error)
-  if (!text) return undefined
+  if (previousVersion === undefined && !isTransport(error)) return undefined
+  const detail = errorText(error)
   const message = previousVersion
-    ? `Version mismatch: background server ${previousVersion}, this client ${OPENCODE_VERSION}. ${text}`
-    : text
+    ? `Version mismatch: background server ${previousVersion}, this client ${OPENCODE_VERSION}. ${detail}`
+    : detail
   process.stderr.write(message + "\n")
   return Effect.promise(() => preflight.fail(message)).pipe(Effect.andThen(Effect.sync(() => process.exit(1))))
 }
 
-function connectText(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null) return undefined
-  if ("cause" in error) {
-    const inner = connectText(error.cause)
-    if (inner) return inner
-  }
-  if (!("message" in error) || typeof error.message !== "string") return undefined
-  if (/Unable to connect|Server process exited with code|Could not reach server/.test(error.message))
-    return error.message
-  return undefined
+function isTransport(error: unknown): boolean {
+  if (error instanceof ClientError) return error.reason === "Transport"
+  return error instanceof Error && isTransport(error.cause)
+}
+
+function errorText(error: unknown): string {
+  if (error instanceof Error && error.cause instanceof Error) return errorText(error.cause)
+  if (error instanceof Error) return error.message
+  return String(error)
 }
