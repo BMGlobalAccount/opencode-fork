@@ -20,22 +20,6 @@ export default Runtime.handler(Commands, (input) =>
     const preflight = UpdatePreflight.make()
     yield* Effect.addFinalizer(() => Effect.promise(() => preflight.close()))
     const replaced: { version?: string } = {}
-    const reportMismatch = (error: unknown) => {
-      const message = mismatchFailure(error, replaced.version)
-      if (!message) return undefined
-      return Effect.logError("background service connection failed", {
-        cause: error,
-        previousVersion: replaced.version,
-      }).pipe(
-        Effect.andThen(
-          Effect.promise(async () => {
-            await preflight.fail(message)
-            process.stderr.write(message + "\n")
-            process.exit(1)
-          }),
-        ),
-      )
-    }
     const serviceStarts = yield* Queue.unbounded<{
       readonly reason: "missing" | "version-mismatch"
       readonly previousVersion?: string
@@ -61,8 +45,8 @@ export default Runtime.handler(Commands, (input) =>
       },
     }).pipe(
       Effect.catch((error) => {
-        const reported = reportMismatch(error)
-        if (reported) return reported
+        const shown = showConnectError(error, replaced.version, preflight)
+        if (shown) return shown
         return Effect.promise(() => preflight.fail("OpenCode update could not start the new background service")).pipe(
           Effect.andThen(Effect.fail(error)),
         )
@@ -148,24 +132,33 @@ export default Runtime.handler(Commands, (input) =>
       },
     }).pipe(
       Effect.provide(LayerNode.compile(Global.node)),
-      Effect.catch((error) => reportMismatch(error) ?? Effect.fail(error)),
+      Effect.catch((error) => showConnectError(error, replaced.version, preflight) ?? Effect.fail(error)),
     )
   }),
 )
 
-function mismatchFailure(error: unknown, previousVersion: string | undefined) {
-  if (previousVersion === undefined || !connectFailure(error)) return undefined
-  return `Version mismatch: background server ${previousVersion}, this client ${OPENCODE_VERSION}. Could not connect to the background server.`
+function showConnectError(
+  error: unknown,
+  previousVersion: string | undefined,
+  preflight: ReturnType<typeof UpdatePreflight.make>,
+) {
+  const text = connectText(error)
+  if (!text) return undefined
+  const message = previousVersion
+    ? `Version mismatch: background server ${previousVersion}, this client ${OPENCODE_VERSION}. ${text}`
+    : text
+  process.stderr.write(message + "\n")
+  return Effect.promise(() => preflight.fail(message)).pipe(Effect.andThen(Effect.sync(() => process.exit(1))))
 }
 
-function connectFailure(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false
-  if ("reason" in error && error.reason === "Transport") return true
-  if (
-    "message" in error &&
-    typeof error.message === "string" &&
-    /Unable to connect|Server process exited with code|Could not reach server/.test(error.message)
-  )
-    return true
-  return "cause" in error && connectFailure(error.cause)
+function connectText(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null) return undefined
+  if ("cause" in error) {
+    const inner = connectText(error.cause)
+    if (inner) return inner
+  }
+  if (!("message" in error) || typeof error.message !== "string") return undefined
+  if (/Unable to connect|Server process exited with code|Could not reach server/.test(error.message))
+    return error.message
+  return undefined
 }
