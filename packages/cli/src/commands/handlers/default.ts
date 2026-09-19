@@ -4,9 +4,8 @@ import { run } from "@opencode/tui"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { Config } from "../../config"
-import { Context, Effect, Fiber, FileSystem, Option, Queue, Result } from "effect"
+import { Context, Effect, Fiber, FileSystem, Option, Queue } from "effect"
 import { ServerConnection } from "../../services/server-connection"
-import { StartupFailure } from "../../services/startup-failure"
 import { Updater } from "../../services/updater"
 import { UpdatePreflight } from "../../services/update-preflight"
 import { Npm } from "@opencode/util/npm"
@@ -20,7 +19,23 @@ export default Runtime.handler(Commands, (input) =>
     if (requestedDirectory !== undefined) process.chdir(requestedDirectory)
     const preflight = UpdatePreflight.make()
     yield* Effect.addFinalizer(() => Effect.promise(() => preflight.close()))
-    const replacement: { mismatch: boolean; previousVersion?: string } = { mismatch: false }
+    const replaced: { version?: string } = {}
+    const reportMismatch = (error: unknown) => {
+      const message = mismatchFailure(error, replaced.version)
+      if (!message) return undefined
+      return Effect.logError("background service connection failed", {
+        cause: error,
+        previousVersion: replaced.version,
+      }).pipe(
+        Effect.andThen(
+          Effect.promise(async () => {
+            await preflight.fail(message)
+            process.stderr.write(message + "\n")
+            process.exit(1)
+          }),
+        ),
+      )
+    }
     const serviceStarts = yield* Queue.unbounded<{
       readonly reason: "missing" | "version-mismatch"
       readonly previousVersion?: string
@@ -30,15 +45,12 @@ export default Runtime.handler(Commands, (input) =>
       Effect.forever,
       Effect.forkScoped,
     )
-    const resolve = ServerConnection.resolve({
+    const server = yield* ServerConnection.resolve({
       server: requestedServer,
       standalone: input.standalone,
       mismatch: "replace",
       onStart: (reason, previousVersion) => {
-        if (reason === "version-mismatch") {
-          replacement.mismatch = true
-          replacement.previousVersion = previousVersion
-        }
+        if (reason === "version-mismatch") replaced.version = previousVersion
         Queue.offerUnsafe(serviceStarts, { reason, previousVersion })
         if (reason === "version-mismatch" && preflight.begin(previousVersion)) return
         process.stderr.write(
@@ -47,22 +59,15 @@ export default Runtime.handler(Commands, (input) =>
             : "Starting background server...\n",
         )
       },
-    })
-    const resolved = yield* Effect.result(resolve)
-    if (Result.isFailure(resolved)) {
-      if (
-        yield* StartupFailure.report({
-          error: resolved.failure,
-          mismatch: replacement.mismatch,
-          previousVersion: replacement.previousVersion,
-          notify: (message) => preflight.fail(message),
-        })
-      )
-        return
-      yield* Effect.promise(() => preflight.fail("OpenCode update could not start the new background service"))
-      return yield* Effect.fail(resolved.failure)
-    }
-    const server = resolved.success
+    }).pipe(
+      Effect.catch((error) => {
+        const reported = reportMismatch(error)
+        if (reported) return reported
+        return Effect.promise(() => preflight.fail("OpenCode update could not start the new background service")).pipe(
+          Effect.andThen(Effect.fail(error)),
+        )
+      }),
+    )
     const updater = yield* Updater.Service
     let installing: string | undefined
     const updateListeners = new Set<(version: string) => void>()
@@ -81,7 +86,7 @@ export default Runtime.handler(Commands, (input) =>
     const runFork = Effect.runForkWith(context)
     const runPromise = Effect.runPromiseWith(context)
     const service = server.service
-    const started = run({
+    yield* run({
       app: {
         name: process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
         version: OPENCODE_VERSION,
@@ -141,19 +146,26 @@ export default Runtime.handler(Commands, (input) =>
                 : Effect.logInfo(message, tags)
         runFork(effect)
       },
-    }).pipe(Effect.provide(LayerNode.compile(Global.node)))
-    const ran = yield* Effect.result(started)
-    if (Result.isFailure(ran)) {
-      if (
-        yield* StartupFailure.report({
-          error: ran.failure,
-          mismatch: replacement.mismatch,
-          previousVersion: replacement.previousVersion,
-          notify: (message) => preflight.fail(message),
-        })
-      )
-        return
-      return yield* Effect.fail(ran.failure)
-    }
+    }).pipe(
+      Effect.provide(LayerNode.compile(Global.node)),
+      Effect.catch((error) => reportMismatch(error) ?? Effect.fail(error)),
+    )
   }),
 )
+
+function mismatchFailure(error: unknown, previousVersion: string | undefined) {
+  if (previousVersion === undefined || !connectFailure(error)) return undefined
+  return `Version mismatch: background server ${previousVersion}, this client ${OPENCODE_VERSION}. Could not connect to the background server.`
+}
+
+function connectFailure(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false
+  if ("reason" in error && error.reason === "Transport") return true
+  if (
+    "message" in error &&
+    typeof error.message === "string" &&
+    /Unable to connect|Server process exited with code|Could not reach server/.test(error.message)
+  )
+    return true
+  return "cause" in error && connectFailure(error.cause)
+}
