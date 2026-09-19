@@ -41,6 +41,63 @@ test("pairs locally without checking the server and authenticates subsequent req
   ).toBe(true)
 })
 
+test("pairs from the base64url fragment printed by opencode pair", async ({ page, baseURL }) => {
+  const origin = new URL(baseURL ?? "http://127.0.0.1:3000").origin
+  const info = { urls: [origin, "http://127.0.0.1:49374"], username: "opencode", password: "fragment-secret" }
+  await page.route("**/api/**", (route) => route.fulfill({ status: 503, contentType: "application/json", body: "{}" }))
+
+  await page.goto(`/connect#${Buffer.from(JSON.stringify(info)).toString("base64url")}`)
+  await expect(page).toHaveURL(`${origin}/`)
+  await expect(page.getByRole("button", { name: "Home", exact: true })).toBeVisible()
+  await expect
+    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("opencode.global.dat:server") ?? "{}").list))
+    .toEqual([{ type: "http", http: { url: origin, password: info.password } }])
+})
+
+test("the hosted app hands HTTP-only pairing links over to the server's own web UI", async ({ page, baseURL }) => {
+  const dev = new URL(baseURL ?? "http://127.0.0.1:3000").origin
+  const hosted = "https://app.opencode.ai"
+  const lan = "http://192.168.1.20:49374"
+  // Serve the dev build under the hosted HTTPS origin so mixed-content rules apply to the page.
+  await page.route(`${hosted}/**`, async (route) => {
+    const response = await page.request.fetch(route.request().url().replace(hosted, dev))
+    await route.fulfill({ response })
+  })
+  await page.route(`${lan}/**`, (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "<title>served</title>" }),
+  )
+  const requests: string[] = []
+  await page.route("**/api/**", async (route) => {
+    requests.push(route.request().url())
+    await route.abort()
+  })
+  const info = { urls: [lan, "http://127.0.0.1:49374"], username: "opencode", password: "lan-secret" }
+  const fragment = Buffer.from(JSON.stringify(info)).toString("base64url")
+
+  await page.goto(`${hosted}/connect#${fragment}`)
+  await expect(page.getByRole("heading", { name: "This server is on a local network" })).toBeVisible()
+  await expect(page.getByText(lan, { exact: true })).toBeVisible()
+  expect(requests).toEqual([])
+
+  await page.getByRole("button", { name: "Open on local network" }).click()
+  await expect(page).toHaveURL(`${lan}/connect#${fragment}`)
+})
+
+test("the hosted app explains loopback-only pairing links", async ({ page, baseURL }) => {
+  const dev = new URL(baseURL ?? "http://127.0.0.1:3000").origin
+  const hosted = "https://app.opencode.ai"
+  await page.route(`${hosted}/**`, async (route) => {
+    const response = await page.request.fetch(route.request().url().replace(hosted, dev))
+    await route.fulfill({ response })
+  })
+  const info = { urls: ["http://127.0.0.1:49374"], username: "opencode", password: "loopback-secret" }
+
+  await page.goto(`${hosted}/connect#${Buffer.from(JSON.stringify(info)).toString("base64url")}`)
+  await expect(page.getByRole("heading", { name: "This server only listens on localhost" })).toBeVisible()
+  await expect(page.getByText("opencode service set hostname 0.0.0.0", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "Open on this computer" })).toBeVisible()
+})
+
 test("the unpaired page loads without starting server requests", async ({ page }) => {
   const requests: string[] = []
   await page.route("**/api/**", async (route) => {

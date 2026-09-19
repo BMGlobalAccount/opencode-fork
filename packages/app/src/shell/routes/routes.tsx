@@ -20,6 +20,9 @@ const SettingsScreen = lazy(() => import("@/settings/shell").then((module) => ({
 const ConnectServerScreen = lazy(() =>
   import("@/servers/connect/screen").then((module) => ({ default: module.ConnectServerScreen })),
 )
+const ConnectLocalScreen = lazy(() =>
+  import("@/servers/connect/local").then((module) => ({ default: module.ConnectLocalScreen })),
+)
 const TargetSessionRouteContent = lazy(() =>
   loadSessionRoute().then((module) => ({ default: module.TargetSessionRouteContent })),
 )
@@ -69,11 +72,18 @@ function ConnectRoute() {
   const navigate = useNavigate()
   const servers = useServers()
   const pairing = decodePairingUrl(location.search, location.origin) ?? decodePairingUrl(location.hash)
+  // The hosted HTTPS app cannot fetch plain-HTTP servers (mixed content), and loopback would point
+  // at the scanning device itself. Only connect to an address this page can use; otherwise hand off
+  // to the server's own web UI. A page served by the server itself prefers its own origin.
+  const url =
+    pairing?.urls.find((url) => url === location.origin) ??
+    pairing?.urls.find((url) => location.protocol !== "https:" || url.startsWith("https:"))
   onMount(() => {
-    if (!pairing) return
-    servers.add({ type: "http", http: { url: pairing.urls[0], password: pairing.password } })
+    if (!pairing || !url) return
+    servers.add({ type: "http", http: { url, password: pairing.password } })
     navigate("/", { replace: true })
   })
+  if (pairing && !url) return <ConnectLocalScreen urls={pairing.urls} />
   return (
     <Show when={!pairing}>
       <ConnectServerScreen onConnect={() => navigate("/", { replace: true })} />
