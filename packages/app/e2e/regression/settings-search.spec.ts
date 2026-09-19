@@ -172,6 +172,24 @@ test("Models and Shortcuts autofocus their filters on normal navigation", async 
   await expect(result).toBeFocused()
 })
 
+test.describe("mobile shortcut search", () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  test("keeps focus after its first character", async ({ page }) => {
+    const view = ui(page)
+    await view.settings.getByRole("button", { name: "Preferences", exact: true }).click()
+    await page.getByRole("menuitemradio", { name: "Shortcuts", exact: true }).click()
+    const search = view.settings.getByRole("searchbox", { name: "Search shortcuts", exact: true })
+    await search.click()
+    await expect(search).toBeFocused()
+
+    await search.press("s")
+
+    await expect(search).toHaveValue("s")
+    await expect(search).toBeFocused()
+  })
+})
+
 test("all indexed client controls resolve to visible production controls", async ({ page }) => {
   const view = ui(page)
   for (const entry of clientSettings.filter((entry) => entry.target && !entry.available)) {
