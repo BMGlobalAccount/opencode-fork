@@ -119,14 +119,17 @@ export const makeMainWindows = Effect.fn("Window.make")(function* () {
         },
       })
 
-    allowRendererPermissions(win)
+    // The early window arrives with its state, security wiring and renderer load already done.
+    if (!early) {
+      allowRendererPermissions(win)
+      wireNavigationPolicy(win, (url) => runFork(openExternalURL(url)))
+      wireRendererHeaders(win)
+      manageWindowState(win, stateFile, state, displays)
+    }
     wireWindowRecovery(win, id, () => relaunchHandler())
-    wireNavigationPolicy(win, (url) => runFork(openExternalURL(url)))
-    wireRendererHeaders(win)
-    if (!early) manageWindowState(win, stateFile, state, displays)
     register(win, id)
     wireFullscreen(win)
-    loadWindow(win, "index.html")
+    if (!early) loadWindow(win, "index.html")
     wireZoom(win)
     let contentReady = false
     let appliedTheme = false
