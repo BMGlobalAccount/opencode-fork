@@ -274,6 +274,25 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         if (part.type !== "reasoning") return false
         return part.metadata?.anthropic?.signature != null
       })
+      // Stream replays (provider retry/resume) can leave multiple tool parts
+      // sharing a single callID inside one assistant message. Providers with
+      // unique tool-call-id constraints (e.g. @ai-sdk/mistral, which throws
+      // "Duplicate tool call id in assistant message") permanently reject such
+      // messages, blocking the whole session on that route. Keep only the most
+      // informative part per callID so affected histories stay sendable.
+      const toolPartRank = (state: { status: string }) => {
+        if (state.status === "completed") return 3
+        if (state.status === "error") return 2
+        return 1
+      }
+      const chosenToolPart = new Map<string, Extract<(typeof msg.parts)[number], { type: "tool" }>>()
+      for (const candidate of msg.parts) {
+        if (candidate.type !== "tool") continue
+        const prev = chosenToolPart.get(candidate.callID)
+        if (!prev || toolPartRank(candidate.state) > toolPartRank(prev.state)) {
+          chosenToolPart.set(candidate.callID, candidate)
+        }
+      }
       for (const part of msg.parts) {
         if (part.type === "text") {
           const text = part.text === "" && hasSignedReasoning ? " " : part.text
@@ -288,6 +307,9 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             type: "step-start",
           })
         if (part.type === "tool") {
+          // Skip duplicate tool parts for a callID already represented in this
+          // assistant message (see chosenToolPart above).
+          if (chosenToolPart.get(part.callID) !== part) continue
           toolNames.add(part.tool)
           if (part.state.status === "completed") {
             const outputText = part.state.time.compacted

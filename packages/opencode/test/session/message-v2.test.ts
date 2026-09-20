@@ -411,6 +411,91 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("dedupes tool parts sharing one callID in an assistant message", async () => {
+    // Provider stream replays can persist a second tool part with the same
+    // callID (typically an aborted "unknown" twin of a completed call).
+    // Providers with unique tool-call-id constraints (Mistral) hard-reject
+    // such assistant messages, so conversion must keep one part per callID.
+    const userID = "m-user-dup"
+    const assistantID = "m-assistant-dup"
+
+    const input: SessionV1.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [
+          {
+            ...basePart(userID, "u1"),
+            type: "text",
+            text: "read file",
+          },
+        ] as SessionV1.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1"),
+            type: "tool",
+            callID: "call-dup-1",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/a" },
+              output: "FILE",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+          {
+            ...basePart(assistantID, "a2"),
+            type: "tool",
+            callID: "call-dup-1",
+            tool: "unknown",
+            state: {
+              status: "error",
+              input: {},
+              raw: "",
+              error: "Tool execution aborted",
+              metadata: { interrupted: true },
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
+      {
+        role: "user",
+        content: [{ type: "text", text: "read file" }],
+      },
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool-call",
+            toolCallId: "call-dup-1",
+            toolName: "read",
+            input: { filePath: "/tmp/a" },
+            providerExecuted: undefined,
+          },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "call-dup-1",
+            toolName: "read",
+            output: { type: "text", value: "FILE" },
+          },
+        ],
+      },
+    ])
+  })
+
   test("preserves jpeg tool-result media for anthropic models", async () => {
     const anthropicModel: Provider.Model = {
       ...model,
