@@ -6209,3 +6209,62 @@ describe("ProviderTransform.options - kimi family adaptive thinking", () => {
     expect(result.thinking).toBeUndefined()
   })
 })
+
+describe("ProviderTransform.message - mistral tool-call id scrubbing", () => {
+  const mistralModel = {
+    id: "mistral/mistral-medium-latest",
+    providerID: "mistral",
+    api: {
+      id: "mistral-medium-latest",
+      url: "https://api.mistral.ai",
+      npm: "@ai-sdk/mistral",
+    },
+    name: "Mistral Medium",
+    capabilities: {
+      temperature: true,
+      reasoning: false,
+      attachment: false,
+      toolcall: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+    limit: { context: 128000, output: 8192 },
+    status: "active",
+    options: {},
+    headers: {},
+    release_date: "2026-01-01",
+  } as unknown as Parameters<typeof ProviderTransform.message>[1]
+
+  test("disambiguates colliding scrubbed tool-call ids and keeps tool-result pairing", () => {
+    // Both ids scrub to "tooluvrtx" under the 9-char alphanumeric rule; Mistral
+    // hard-rejects duplicate tool-call ids per assistant message.
+    const messages: ModelMessage[] = [
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "toolu_vrtx_01AAAA", toolName: "read", input: {} },
+          { type: "tool-call", toolCallId: "toolu_vrtx_01BBBB", toolName: "read", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          { type: "tool-result", toolCallId: "toolu_vrtx_01AAAA", toolName: "read", output: { type: "text", value: "a" } },
+          { type: "tool-result", toolCallId: "toolu_vrtx_01BBBB", toolName: "read", output: { type: "text", value: "b" } },
+        ],
+      },
+    ]
+    const result = ProviderTransform.message(messages, mistralModel, {})
+    const assistant = result.find((m) => m.role === "assistant")
+    if (!assistant || !Array.isArray(assistant.content)) throw new Error("assistant message missing")
+    const ids = assistant.content.filter((p) => p.type === "tool-call").map((p) => (p as { toolCallId: string }).toolCallId)
+    expect(ids).toHaveLength(2)
+    expect(new Set(ids).size).toBe(2)
+    const tool = result.find((m) => m.role === "tool")
+    if (!tool || !Array.isArray(tool.content)) throw new Error("tool message missing")
+    const resultIds = tool.content.map((p) => (p as { toolCallId: string }).toolCallId)
+    expect([...resultIds].sort()).toEqual([...ids].sort())
+  })
+})

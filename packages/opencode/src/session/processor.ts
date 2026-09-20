@@ -66,6 +66,7 @@ type ToolCall = {
 
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
+  settled: Record<string, ToolCall>
   shouldBreak: boolean
   snapshot: string | undefined
   blocked: boolean
@@ -105,6 +106,7 @@ const layer = Layer.effect(
         sessionID: input.sessionID,
         model: input.model,
         toolcalls: {},
+        settled: {},
         shouldBreak: false,
         snapshot: initialSnapshot,
         blocked: false,
@@ -121,8 +123,13 @@ const layer = Layer.effect(
         })
 
       const settleToolCall = Effect.fn("SessionProcessor.settleToolCall")(function* (toolCallID: string) {
-        const done = ctx.toolcalls[toolCallID]?.done
+        const call = ctx.toolcalls[toolCallID]
+        const done = call?.done
         delete ctx.toolcalls[toolCallID]
+        // Remember settled callIDs for the lifetime of this assistant message so
+        // replayed stream events (provider retry/resume) re-adopt the persisted
+        // part instead of creating a duplicate part with the same callID.
+        if (call) ctx.settled[toolCallID] = call
         if (done) yield* Deferred.succeed(done, undefined).pipe(Effect.ignore)
       })
 
@@ -167,7 +174,11 @@ const layer = Layer.effect(
         },
       ) {
         const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return
+        if (!match) return
+        if (match.part.state.status !== "running") {
+          yield* settleToolCall(toolCallID)
+          return
+        }
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -185,7 +196,11 @@ const layer = Layer.effect(
 
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return false
+        if (!match) return false
+        if (match.part.state.status !== "running") {
+          yield* settleToolCall(toolCallID)
+          return false
+        }
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -232,6 +247,17 @@ const layer = Layer.effect(
             sessionID: part.sessionID,
           }
           return { call: ctx.toolcalls[input.id], part }
+        }
+        const settledCall = ctx.settled[input.id]
+        if (settledCall) {
+          // Replay of an already settled call: re-adopt the persisted part so no
+          // duplicate part with the same callID is created in this message.
+          const part = yield* session.getPart({
+            partID: settledCall.partID,
+            messageID: settledCall.messageID,
+            sessionID: settledCall.sessionID,
+          })
+          if (part && part.type === "tool") return { call: settledCall, part }
         }
         const part = yield* session.updatePart({
           id: PartID.ascending(),
@@ -592,6 +618,11 @@ const layer = Layer.effect(
           const match = yield* readToolCall(toolCallID)
           if (!match) continue
           const part = match.part
+          // Never downgrade a part that already reached a terminal state.
+          if (part.state.status === "completed" || part.state.status === "error") {
+            yield* settleToolCall(toolCallID)
+            continue
+          }
           const end = Date.now()
           const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
           yield* session.updatePart({

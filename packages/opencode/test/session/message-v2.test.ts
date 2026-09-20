@@ -496,6 +496,133 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("dedupe is order-independent: completed twin wins even when it arrives last", async () => {
+    const userID = "m-user-dup-order"
+    const assistantID = "m-assistant-dup-order"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1"),
+            type: "tool",
+            callID: "call-dup-2",
+            tool: "unknown",
+            state: {
+              status: "error",
+              input: {},
+              raw: "",
+              error: "Tool execution aborted",
+              metadata: { interrupted: true },
+              time: { start: 0, end: 1 },
+            },
+          },
+          {
+            ...basePart(assistantID, "a2"),
+            type: "tool",
+            callID: "call-dup-2",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/a" },
+              output: "FILE",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model)
+    const toolResults = result
+      .flatMap((m) => m.content as Array<Record<string, any>>)
+      .filter((c) => c.type === "tool-result") as Array<{ toolCallId: string; output: { type: string; value?: string } }>
+    expect(toolResults).toHaveLength(1)
+    expect(toolResults[0].output).toEqual({ type: "text", value: "FILE" })
+  })
+
+  test("dedupe keeps the first twin on equal rank and prefers non-compacted output", async () => {
+    const userID = "m-user-dup-tie"
+    const assistantID = "m-assistant-dup-tie"
+    const input: SessionV1.WithParts[] = [
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1"),
+            type: "tool",
+            callID: "call-dup-3",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/a" },
+              output: "CLEARED",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1, compacted: 1234 },
+            },
+          },
+          {
+            ...basePart(assistantID, "a2"),
+            type: "tool",
+            callID: "call-dup-3",
+            tool: "read",
+            state: {
+              status: "completed",
+              input: { filePath: "/tmp/a" },
+              output: "FULL",
+              title: "Read",
+              metadata: {},
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as SessionV1.Part[],
+      },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model)
+    const toolResults = result
+      .flatMap((m) => m.content as Array<Record<string, any>>)
+      .filter((c) => c.type === "tool-result") as Array<{ output: { type: string; value?: string } }>
+    expect(toolResults).toHaveLength(1)
+    expect(toolResults[0].output).toEqual({ type: "text", value: "FULL" })
+  })
+
+  test("same callID in different assistant messages is not deduped", async () => {
+    const userID = "m-user-dup-cross"
+    const firstID = "m-assistant-dup-cross-1"
+    const secondID = "m-assistant-dup-cross-2"
+    const toolPart = (messageID: string, partID: string) =>
+      ({
+        ...basePart(messageID, partID),
+        type: "tool",
+        callID: "call-shared",
+        tool: "read",
+        state: {
+          status: "completed",
+          input: { filePath: "/tmp/a" },
+          output: "FILE",
+          title: "Read",
+          metadata: {},
+          time: { start: 0, end: 1 },
+        },
+      }) as SessionV1.Part
+
+    const input: SessionV1.WithParts[] = [
+      { info: userInfo(userID), parts: [{ ...basePart(userID, "u1"), type: "text", text: "go" }] as SessionV1.Part[] },
+      { info: assistantInfo(firstID, userID), parts: [toolPart(firstID, "a1")] },
+      { info: assistantInfo(secondID, firstID), parts: [toolPart(secondID, "a2")] },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model)
+    const toolCalls = result
+      .flatMap((m) => m.content as Array<Record<string, any>>)
+      .filter((c) => c.type === "tool-call" && (c as { toolCallId: string }).toolCallId === "call-shared")
+    expect(toolCalls).toHaveLength(2)
+  })
+
   test("preserves jpeg tool-result media for anthropic models", async () => {
     const anthropicModel: Provider.Model = {
       ...model,

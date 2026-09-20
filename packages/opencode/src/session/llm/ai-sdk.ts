@@ -237,7 +237,8 @@ export function toLLMEvents(
     case "tool-result":
       return Effect.sync(() => {
         const name = state.toolNames[event.toolCallId] ?? "unknown"
-        delete state.toolNames[event.toolCallId]
+        // Keep the name mapping for the life of the adapter: replayed events
+        // after the first result must not fall back to "unknown".
         return [
           LLMEvent.toolResult({
             id: event.toolCallId,
@@ -252,7 +253,6 @@ export function toLLMEvents(
     case "tool-error":
       return Effect.sync(() => {
         const name = state.toolNames[event.toolCallId] ?? ("toolName" in event ? event.toolName : "unknown")
-        delete state.toolNames[event.toolCallId]
         return [
           LLMEvent.toolError({
             id: event.toolCallId,

@@ -261,6 +261,25 @@ function normalizeMessages(
         .substring(0, 9) // Take first 9 characters
         .padEnd(9, "0") // Pad with zeros if less than 9 characters
     }
+    // The 9-char scrub can collide (e.g. every Anthropic-on-Vertex id collapses
+    // to "tooluvrtx"), and Mistral hard-rejects duplicate tool-call ids per
+    // assistant message. Disambiguate deterministically and keep tool-result
+    // pairing by reusing the assigned id for the same original callID.
+    const assigned = new Map<string, string>()
+    const used = new Set<string>()
+    const unique = (id: string) => {
+      const hit = assigned.get(id)
+      if (hit) return hit
+      let candidate = scrub(id)
+      if (used.has(candidate)) {
+        let counter = 1
+        while (used.has(candidate.slice(0, 7) + String(counter).padStart(2, "0"))) counter++
+        candidate = candidate.slice(0, 7) + String(counter).padStart(2, "0")
+      }
+      used.add(candidate)
+      assigned.set(id, candidate)
+      return candidate
+    }
     const result: ModelMessage[] = []
     for (let i = 0; i < msgs.length; i++) {
       const msg = msgs[i]
@@ -269,7 +288,7 @@ function normalizeMessages(
       if (msg.role === "assistant" && Array.isArray(msg.content)) {
         msg.content = msg.content.map((part) => {
           if (part.type === "tool-call" || part.type === "tool-result") {
-            return { ...part, toolCallId: scrub(part.toolCallId) }
+            return { ...part, toolCallId: unique(part.toolCallId) }
           }
           return part
         })
@@ -277,7 +296,7 @@ function normalizeMessages(
       if (msg.role === "tool" && Array.isArray(msg.content)) {
         msg.content = msg.content.map((part) => {
           if (part.type === "tool-result") {
-            return { ...part, toolCallId: scrub(part.toolCallId) }
+            return { ...part, toolCallId: unique(part.toolCallId) }
           }
           return part
         })

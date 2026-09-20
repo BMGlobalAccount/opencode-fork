@@ -280,16 +280,18 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
       // "Duplicate tool call id in assistant message") permanently reject such
       // messages, blocking the whole session on that route. Keep only the most
       // informative part per callID so affected histories stay sendable.
-      const toolPartRank = (state: { status: string }) => {
-        if (state.status === "completed") return 3
-        if (state.status === "error") return 2
-        return 1
+      const toolPartRank = (part: Extract<(typeof msg.parts)[number], { type: "tool" }>) => {
+        const status = part.state.status === "completed" ? 3 : part.state.status === "error" ? 2 : 1
+        // Within equal status prefer the twin whose output was not cleared by
+        // compaction prune, so the model keeps the real result when present.
+        const fresh = part.state.status === "completed" && part.state.time.compacted ? 0 : 1
+        return status * 2 + fresh
       }
       const chosenToolPart = new Map<string, Extract<(typeof msg.parts)[number], { type: "tool" }>>()
       for (const candidate of msg.parts) {
         if (candidate.type !== "tool") continue
         const prev = chosenToolPart.get(candidate.callID)
-        if (!prev || toolPartRank(candidate.state) > toolPartRank(prev.state)) {
+        if (!prev || toolPartRank(candidate) > toolPartRank(prev)) {
           chosenToolPart.set(candidate.callID, candidate)
         }
       }

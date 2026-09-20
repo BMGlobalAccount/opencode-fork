@@ -51,6 +51,21 @@ type CompletedCompaction = {
 const truncate = (value: string) =>
   value.length <= TOOL_OUTPUT_MAX_CHARS ? value : `${value.slice(0, TOOL_OUTPUT_MAX_CHARS)}\n[truncated]`
 
+// Stream replays can persist multiple tool parts sharing one callID inside a
+// single assistant message. Summaries and prune budgets must count each call
+// once, keeping the most informative twin (completed > error > pending).
+const chosenToolParts = (parts: SessionV1.Part[]) => {
+  const rank = (part: SessionV1.ToolPart) =>
+    part.state.status === "completed" ? 2 : part.state.status === "error" ? 1 : 0
+  const best = new Map<string, SessionV1.ToolPart>()
+  for (const part of parts) {
+    if (part.type !== "tool") continue
+    const prev = best.get(part.callID)
+    if (!prev || rank(part) > rank(prev)) best.set(part.callID, part)
+  }
+  return best
+}
+
 const serialize = (message: SessionV1.WithParts) => {
   if (message.info.role === "user") {
     const text = message.parts
@@ -63,11 +78,13 @@ const serialize = (message: SessionV1.WithParts) => {
     )
     return [...(text ? [`[User]: ${text}`] : []), ...files].join("\n")
   }
+  const best = chosenToolParts(message.parts)
   return message.parts
     .flatMap((part) => {
       if (part.type === "text") return part.text ? [`[Assistant]: ${part.text}`] : []
       if (part.type === "reasoning") return part.text ? [`[Assistant reasoning]: ${part.text}`] : []
       if (part.type !== "tool") return []
+      if (best.get(part.callID) !== part) return []
       const call = `[Assistant tool call]: ${part.tool}(${JSON.stringify(part.state.input)})`
       if (part.state.status === "completed") {
         const attachments = (part.state.attachments ?? []).map(
@@ -290,9 +307,11 @@ const layer = Layer.effect(
         if (msg.info.role === "user") turns++
         if (turns < 2) continue
         if (msg.info.role === "assistant" && msg.info.summary) break loop
+        const best = chosenToolParts(msg.parts)
         for (let partIndex = msg.parts.length - 1; partIndex >= 0; partIndex--) {
           const part = msg.parts[partIndex]
           if (part.type !== "tool") continue
+          if (best.get(part.callID) !== part) continue
           if (part.state.status !== "completed") continue
           if (PRUNE_PROTECTED_TOOLS.includes(part.tool)) continue
           if (part.state.time.compacted) break loop
