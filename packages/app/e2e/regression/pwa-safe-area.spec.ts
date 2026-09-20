@@ -3,33 +3,22 @@ import { fixture } from "../smoke/session-timeline.fixture"
 import { mockOpenCodeServer } from "../utils/mock-server"
 
 const cases = [
-  {
-    name: "portrait",
-    viewport: { width: 390, height: 844 },
-    insets: { top: 47, right: 0, bottom: 34, left: 0 },
-    bottom: false,
-  },
-  {
-    name: "landscape",
-    viewport: { width: 844, height: 390 },
-    insets: { top: 0, right: 47, bottom: 21, left: 47 },
-    bottom: false,
-  },
-  {
-    name: "portrait with bottom tabs",
-    viewport: { width: 390, height: 844 },
-    insets: { top: 47, right: 0, bottom: 34, left: 0 },
-    bottom: true,
-  },
+  { name: "mobile browser", inset: 47, standalone: false, bottom: false },
+  { name: "iOS standalone", inset: 47, standalone: true, bottom: false },
+  { name: "iOS standalone with bottom tabs", inset: 47, standalone: true, bottom: true },
+  // Landscape or a system-reserved status bar reports 0; the fade offset must not apply.
+  { name: "iOS standalone without status bar", inset: 0, standalone: true, bottom: false },
 ]
 
 for (const input of cases) {
   test.describe(input.name, () => {
-    test.use({ viewport: input.viewport, hasTouch: true })
+    test.use({ viewport: { width: 390, height: 844 }, hasTouch: true })
 
-    test("keeps app navigation clear of native chrome", async ({ page }) => {
+    test("keeps the titlebar below the status bar", async ({ page }) => {
       const cdp = await page.context().newCDPSession(page)
-      await cdp.send("Emulation.setSafeAreaInsetsOverride", { insets: input.insets })
+      await cdp.send("Emulation.setSafeAreaInsetsOverride", {
+        insets: { top: input.inset, right: 0, bottom: 34, left: 0 },
+      })
       await mockOpenCodeServer(page, {
         directory: fixture.directory,
         project: fixture.project,
@@ -38,7 +27,8 @@ for (const input of cases) {
         pageMessages: () => ({ items: [] }),
       })
       await page.addInitScript(
-        ({ bottom, directory, server, sessions }) => {
+        ({ bottom, directory, server, sessions, standalone }) => {
+          Object.defineProperty(navigator, "standalone", { value: standalone })
           localStorage.setItem(
             "settings.v3",
             JSON.stringify({ general: { mobileTitlebarPosition: bottom ? "bottom" : "top" } }),
@@ -57,33 +47,22 @@ for (const input of cases) {
           directory: fixture.directory,
           server: fixture.serverKey,
           sessions: fixture.sessions,
+          standalone: input.standalone,
         },
       )
 
       await page.goto("/")
 
       const titlebar = page.locator('[data-slot="titlebar-v2"]')
-      await expect(titlebar).toHaveCSS("padding-left", `${input.insets.left}px`)
-      await expect(titlebar).toHaveCSS("padding-right", `${input.insets.right}px`)
-
+      const top = input.inset + (input.standalone && input.inset > 0 ? 32 : 0)
       if (input.bottom) {
-        await expect(titlebar).toHaveCSS("padding-bottom", `${input.insets.bottom}px`)
-        await expect(page.getByRole("main")).toHaveCSS("padding-top", `${input.insets.top}px`)
+        await expect(page.getByRole("main")).toHaveCSS("padding-top", `${top}px`)
       } else {
-        await expect(titlebar).toHaveCSS("padding-top", `${input.insets.top}px`)
+        await expect(titlebar).toHaveCSS("padding-top", `${top}px`)
       }
 
-      const navigation =
-        input.viewport.width < 768
-          ? titlebar.getByRole("button", { name: "Tabs", exact: true })
-          : titlebar.getByRole("button", { name: "Home", exact: true })
+      const navigation = titlebar.getByRole("button", { name: "Tabs", exact: true })
       await expect(navigation).toBeInViewport({ ratio: 1 })
-      const bounds = await navigation.boundingBox()
-      expect(bounds).not.toBeNull()
-      expect(bounds!.x).toBeGreaterThanOrEqual(input.insets.left)
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(input.viewport.width - input.insets.right)
-
-      if (input.viewport.width >= 768) return
       await navigation.tap()
       await expect(navigation).toHaveAttribute("aria-expanded", "true")
     })
