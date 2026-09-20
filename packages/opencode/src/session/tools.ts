@@ -42,7 +42,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   agent: Agent.Info
   model: Provider.Model
   session: Session.Info
-  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+  processor: Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall" | "completedToolOutput">
   bypassAgentCheck: boolean
   messages: SessionV1.WithParts[]
   promptOps: TaskPromptOps
@@ -99,11 +99,17 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     tools[item.id] = tool({
       description: item.description,
       inputSchema: jsonSchema(schema),
-      execute(args, options) {
-        return run.promise(
-          Effect.gen(function* () {
-            const ctx = context(args, options)
-            yield* plugin.trigger(
+        execute(args, options) {
+          return run.promise(
+            Effect.gen(function* () {
+              const ctx = context(args, options)
+              // Idempotency guard: provider replays/retries can re-dispatch an
+              // already completed tool-call id within the same assistant
+              // message. Re-executing would double side effects; return the
+              // stored output instead.
+              const prior = input.processor.completedToolOutput(options.toolCallId)
+              if (prior) return prior
+              yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },

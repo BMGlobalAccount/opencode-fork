@@ -44,6 +44,16 @@ export interface Handle {
       attachments?: SessionV1.FilePart[]
     },
   ) => Effect.Effect<void>
+  readonly completedToolOutput: (
+    toolCallID: string,
+  ) =>
+    | {
+        title: string
+        metadata: Record<string, any>
+        output: string
+        attachments?: SessionV1.FilePart[]
+      }
+    | undefined
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
 }
 
@@ -67,6 +77,15 @@ type ToolCall = {
 interface ProcessorContext extends Input {
   toolcalls: Record<string, ToolCall>
   settled: Record<string, ToolCall>
+  completedOutputs: Map<
+    string,
+    {
+      title: string
+      metadata: Record<string, any>
+      output: string
+      attachments?: SessionV1.FilePart[]
+    }
+  >
   shouldBreak: boolean
   snapshot: string | undefined
   blocked: boolean
@@ -107,6 +126,7 @@ const layer = Layer.effect(
         model: input.model,
         toolcalls: {},
         settled: {},
+        completedOutputs: new Map(),
         shouldBreak: false,
         snapshot: initialSnapshot,
         blocked: false,
@@ -179,6 +199,7 @@ const layer = Layer.effect(
           yield* settleToolCall(toolCallID)
           return
         }
+        ctx.completedOutputs.set(toolCallID, output)
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -733,6 +754,7 @@ const layer = Layer.effect(
         },
         updateToolCall,
         completeToolCall,
+        completedToolOutput: (toolCallID: string) => ctx.completedOutputs.get(toolCallID),
         process,
       } satisfies Handle
     })

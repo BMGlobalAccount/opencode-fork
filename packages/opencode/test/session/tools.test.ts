@@ -133,7 +133,11 @@ it.effect("preserves running tool start time across metadata updates", () =>
           return state
         }),
       completeToolCall: () => Effect.void,
-    } satisfies Pick<SessionProcessor.Handle, "message" | "updateToolCall" | "completeToolCall">
+      completedToolOutput: () => undefined,
+    } satisfies Pick<
+      SessionProcessor.Handle,
+      "message" | "updateToolCall" | "completeToolCall" | "completedToolOutput"
+    >
 
     const tools = yield* SessionTools.resolve({
       agent,
@@ -163,5 +167,62 @@ it.effect("preserves running tool start time across metadata updates", () =>
     if (state.state.status === "running") {
       expect(state.state.time.start).toBe(100)
     }
+  }),
+)
+
+it.effect("replayed tool-call for an already completed callID returns stored output without re-executing", () =>
+  Effect.gen(function* () {
+    const stored = { title: "stored", metadata: {}, output: "cached" }
+    const processor = {
+      message: {
+        id: messageID,
+        sessionID,
+        role: "assistant",
+        parentID: MessageID.ascending(),
+        agent: "build",
+        mode: "build",
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ModelV2.ID.make("test-model"),
+        providerID: ProviderV2.ID.make("test"),
+        time: { created: 1 },
+      } satisfies SessionV1.Assistant,
+      updateToolCall: () => Effect.succeed(undefined),
+      completeToolCall: () => Effect.void,
+      completedToolOutput: (id: string) => (id === callID ? stored : undefined),
+    } satisfies Pick<
+      SessionProcessor.Handle,
+      "message" | "updateToolCall" | "completeToolCall" | "completedToolOutput"
+    >
+
+    const tools = yield* SessionTools.resolve({
+      agent: {
+        name: "build",
+        permission: [],
+      } as never,
+      model: {
+        id: ModelV2.ID.make("test-model"),
+        providerID: ProviderV2.ID.make("test"),
+        api: { id: "test-model", url: "http://localhost", npm: "@ai-sdk/openai-compatible" },
+      } as never,
+      session: { id: sessionID, permission: [] } as never,
+      processor,
+      bypassAgentCheck: false,
+      messages: [],
+      promptOps: {} as never,
+    })
+    const execute = tools.timing.execute
+    if (!execute) throw new Error("timing tool is missing execute")
+
+    const replayed = yield* Effect.promise(() =>
+      execute({}, { toolCallId: callID, abortSignal: new AbortController().signal, messages: [] }),
+    )
+    expect(replayed).toEqual(stored)
+
+    const fresh = yield* Effect.promise(() =>
+      execute({}, { toolCallId: "call_fresh", abortSignal: new AbortController().signal, messages: [] }),
+    )
+    expect((fresh as { title: string }).title).toBe("timing")
   }),
 )

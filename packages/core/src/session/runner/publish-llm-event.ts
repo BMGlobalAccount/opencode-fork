@@ -316,7 +316,9 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         if (!tool.inputEnded) yield* endToolInput(event)
         if (tool.name !== event.name)
           return yield* Effect.die(`Tool call name changed for ${event.id}: ${tool.name} -> ${event.name}`)
-        if (tool.called) return yield* Effect.die(`Duplicate tool call: ${event.id}`)
+        // Benign provider replay of an already recorded call: ignore instead of
+        // killing the turn; the first Tool.Called event is already in history.
+        if (tool.called) return
         tool.called = true
         tool.providerExecuted = event.providerExecuted === true
         tool.providerMetadata = event.providerMetadata
@@ -340,8 +342,8 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         if (tool.name !== event.name)
           return yield* Effect.die(`Tool result name changed for ${event.id}: ${tool.name} -> ${event.name}`)
         if (tool.settled) {
-          if (event.result.type === "error") return
-          return yield* Effect.die(`Duplicate tool result: ${event.id}`)
+          // Replay of an already settled call: ignore duplicates entirely.
+          return
         }
         tool.settled = true
         const result = settledOutput(event.output, event.result)

@@ -134,3 +134,22 @@ test("step finish records settlement without publishing step ended", async () =>
   expect(published.some((event) => event.type === "session.next.step.ended.2")).toBe(false)
   expect(publisher.stepSettlement()).toMatchObject({ finish: "stop" })
 })
+
+test("replayed duplicate tool-call and tool-result events are ignored, not fatal", async () => {
+  const { published, publisher } = capture()
+  const replayCall = LLMEvent.toolCall({ id: "call-replay", name: "bash", input: { cmd: "ls" } })
+  const replayResult = LLMEvent.toolResult({
+    id: "call-replay",
+    name: "bash",
+    result: { type: "content", value: [{ type: "text", text: "ok" }] },
+    output: { structured: undefined, content: [{ type: "text", text: "ok" }] },
+  } as never)
+
+  await Effect.runPromise(publisher.publish(replayCall))
+  await Effect.runPromise(publisher.publish(replayCall))
+  await Effect.runPromise(publisher.publish(replayResult))
+  await Effect.runPromise(publisher.publish(replayResult))
+
+  expect(published.filter((event) => event.type === "session.next.tool.called.1")).toHaveLength(1)
+  expect(published.filter((event) => event.type === "session.next.tool.success.1")).toHaveLength(1)
+})
