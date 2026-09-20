@@ -4,31 +4,21 @@ import { mockOpenCodeServer } from "../utils/mock-server"
 
 const cases = [
   {
-    name: "mobile browser",
+    name: "portrait",
     viewport: { width: 390, height: 844 },
     insets: { top: 47, right: 0, bottom: 34, left: 0 },
-    standalone: false,
     bottom: false,
   },
   {
-    name: "iOS standalone",
-    viewport: { width: 390, height: 844 },
-    insets: { top: 47, right: 0, bottom: 34, left: 0 },
-    standalone: true,
-    bottom: false,
-  },
-  {
-    name: "iOS standalone landscape",
+    name: "landscape",
     viewport: { width: 844, height: 390 },
     insets: { top: 0, right: 47, bottom: 21, left: 47 },
-    standalone: true,
     bottom: false,
   },
   {
-    name: "iOS standalone with bottom tabs",
+    name: "portrait with bottom tabs",
     viewport: { width: 390, height: 844 },
     insets: { top: 47, right: 0, bottom: 34, left: 0 },
-    standalone: true,
     bottom: true,
   },
 ]
@@ -48,8 +38,7 @@ for (const input of cases) {
         pageMessages: () => ({ items: [] }),
       })
       await page.addInitScript(
-        ({ bottom, directory, server, sessions, standalone }) => {
-          Object.defineProperty(navigator, "standalone", { value: standalone })
+        ({ bottom, directory, server, sessions }) => {
           localStorage.setItem(
             "settings.v3",
             JSON.stringify({ general: { mobileTitlebarPosition: bottom ? "bottom" : "top" } }),
@@ -68,22 +57,20 @@ for (const input of cases) {
           directory: fixture.directory,
           server: fixture.serverKey,
           sessions: fixture.sessions,
-          standalone: input.standalone,
         },
       )
 
       await page.goto("/")
 
       const titlebar = page.locator('[data-slot="titlebar-v2"]')
-      const top = input.insets.top + (input.standalone ? 32 : 0)
       await expect(titlebar).toHaveCSS("padding-left", `${input.insets.left}px`)
       await expect(titlebar).toHaveCSS("padding-right", `${input.insets.right}px`)
 
       if (input.bottom) {
         await expect(titlebar).toHaveCSS("padding-bottom", `${input.insets.bottom}px`)
-        await expect(page.getByRole("main")).toHaveCSS("padding-top", `${top}px`)
+        await expect(page.getByRole("main")).toHaveCSS("padding-top", `${input.insets.top}px`)
       } else {
-        await expect(titlebar).toHaveCSS("padding-top", `${top}px`)
+        await expect(titlebar).toHaveCSS("padding-top", `${input.insets.top}px`)
       }
 
       const navigation =
