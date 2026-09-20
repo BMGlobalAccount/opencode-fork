@@ -45,7 +45,8 @@ export declare namespace Source {
     readonly codec: Schema.Codec<A, Schema.Json>
     readonly read: Effect.Effect<A | Unavailable | Removed>
     readonly render: {
-      readonly initial: (current: A) => string
+      /** Omit when the baseline is already visible to the model and only changes carry information. */
+      readonly initial?: (current: A) => string
       readonly changed: (previous: A, current: A) => string
       readonly removed?: (previous: A) => string
     }
@@ -88,7 +89,8 @@ export const empty: List = []
 export function make<A>(source: Source.Definition<A>): List {
   const decode = Schema.decodeUnknownOption(source.codec)
   const encode = Schema.encodeSync(source.codec)
-  const initial = (value: A) => requireText(source.key, "initial", source.render.initial(value))
+  const initial = (value: A) =>
+    source.render.initial === undefined ? undefined : requireText(source.key, "initial", source.render.initial(value))
   const decodeValue = (value: Schema.Json) => Option.getOrUndefined(decode(value))
   return [
     {

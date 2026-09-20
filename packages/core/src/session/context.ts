@@ -16,6 +16,7 @@ import { McpTool } from "../tool/mcp.js"
 import { ReferenceInstructions } from "../reference/instructions.js"
 import { SkillInstructions } from "../skill/instructions.js"
 import { Tool } from "../tool.js"
+import { ToolInstructions } from "../tool/instructions.js"
 import { AgentNotFoundError } from "./error.js"
 import { SessionHistory } from "./history.js"
 import { SessionProviderContext } from "./provider-context.js"
@@ -146,6 +147,7 @@ const layer = Layer.effect(
         agent: { ...agent, info: agent.info },
         instructions: Instructions.combine([
           loaded.builtins,
+          ToolInstructions.make(loaded.tools.definitions.map((definition) => definition.name)),
           CodeModeInstructions.make(loaded.tools.codeModeCatalog),
           loaded.discovery,
           loaded.skills,
