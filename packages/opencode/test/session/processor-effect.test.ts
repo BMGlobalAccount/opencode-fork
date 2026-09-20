@@ -1169,3 +1169,75 @@ itFragmentFailure.live("session.processor effect tests retain partial legacy par
     { config: cfg },
   ),
 )
+
+it.live("session.processor effect tests upgrade interrupted parts when a late completion lands", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const { processors, session, provider } = yield* boot()
+
+        yield* llm.toolHang("bash", { cmd: "pwd" })
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "late completion")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const run = yield* handle
+          .process({
+            user: {
+              id: parent.id,
+              sessionID: chat.id,
+              role: "user",
+              time: parent.time,
+              agent: parent.agent,
+              model: { providerID: ref.providerID, modelID: ref.modelID },
+            } satisfies SessionV1.User,
+            sessionID: chat.id,
+            model: mdl,
+            agent: agent(),
+            system: [],
+            messages: [{ role: "user", content: "late" }],
+            tools: {},
+          })
+          .pipe(Effect.forkChild)
+
+        yield* llm.wait(1)
+        yield* waitFor(
+          MessageV2.parts(msg.id).pipe(
+            Effect.map((parts) => parts.find((part): part is SessionV1.ToolPart => part.type === "tool")),
+            Effect.provideService(Database.Service, database),
+          ),
+          "timed out waiting for tool part",
+        )
+        yield* Fiber.interrupt(run)
+        yield* Fiber.await(run)
+
+        const stamped = yield* MessageV2.parts(msg.id).pipe(Effect.provideService(Database.Service, database))
+        const interruptedPart = stamped.find((part): part is SessionV1.ToolPart => part.type === "tool")
+        expect(interruptedPart?.state.status).toBe("error")
+        if (!interruptedPart || interruptedPart.state.status !== "error") return
+
+        yield* handle.completeToolCall(interruptedPart.callID, {
+          title: "Late",
+          metadata: { source: "late" },
+          output: "landed",
+        })
+
+        const after = yield* MessageV2.parts(msg.id).pipe(Effect.provideService(Database.Service, database))
+        const late = after.find((part): part is SessionV1.ToolPart => part.type === "tool")
+        expect(late?.state.status).toBe("completed")
+        if (late?.state.status === "completed") {
+          expect(late.state.output).toBe("landed")
+          expect(late.state.title).toBe("Late")
+        }
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)

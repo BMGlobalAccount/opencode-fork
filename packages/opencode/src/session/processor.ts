@@ -184,6 +184,29 @@ const layer = Layer.effect(
         return part
       })
 
+      // Late/orphan results: the in-memory entry can be gone (cleanup cleared
+      // it, or an early-return skipped settling) while the persisted part is
+      // still non-terminal or falsely stamped interrupted. Re-adopt it so the
+      // real outcome lands in history instead of being dropped.
+      const adoptLateToolCall = Effect.fn("SessionProcessor.adoptLateToolCall")(function* (toolCallID: string) {
+        const parts = yield* MessageV2.parts(ctx.assistantMessage.id).pipe(
+          Effect.provideService(Database.Service, database),
+        )
+        const part = parts.find(
+          (item): item is SessionV1.ToolPart => item.type === "tool" && item.callID === toolCallID,
+        )
+        if (!part) return undefined
+        const interrupted = part.state.status === "error" && part.state.metadata?.interrupted === true
+        if (part.state.status !== "pending" && part.state.status !== "running" && !interrupted) return undefined
+        ctx.toolcalls[toolCallID] = {
+          done: yield* Deferred.make<void>(),
+          partID: part.id,
+          messageID: part.messageID,
+          sessionID: part.sessionID,
+        }
+        return { call: ctx.toolcalls[toolCallID], part }
+      })
+
       const completeToolCall = Effect.fn("SessionProcessor.completeToolCall")(function* (
         toolCallID: string,
         output: {
@@ -193,9 +216,11 @@ const layer = Layer.effect(
           attachments?: SessionV1.FilePart[]
         },
       ) {
-        const match = yield* readToolCall(toolCallID)
+        let match = yield* readToolCall(toolCallID)
+        if (!match) match = yield* adoptLateToolCall(toolCallID)
         if (!match) return
-        if (match.part.state.status !== "running") {
+        const interrupted = match.part.state.status === "error" && match.part.state.metadata?.interrupted === true
+        if (match.part.state.status !== "running" && !interrupted) {
           yield* settleToolCall(toolCallID)
           return
         }
@@ -208,7 +233,7 @@ const layer = Layer.effect(
             output: output.output,
             metadata: output.metadata,
             title: output.title,
-            time: { start: match.part.state.time.start, end: Date.now() },
+            time: { start: "time" in match.part.state ? match.part.state.time.start : Date.now(), end: Date.now() },
             attachments: output.attachments,
           },
         })
@@ -428,7 +453,8 @@ const layer = Layer.effect(
           }
 
           case "tool-result": {
-            const toolCall = yield* readToolCall(value.id)
+            let toolCall = yield* readToolCall(value.id)
+            if (!toolCall) toolCall = yield* adoptLateToolCall(value.id)
             if (!toolCall && value.result.type === "error") return
             if (value.result.type === "error") {
               yield* failToolCall(value.id, value.result.value)
@@ -597,6 +623,24 @@ const layer = Layer.effect(
         }
       })
 
+      const finalizeInFlight = Effect.gen(function* () {
+        if (ctx.currentText) {
+          const end = Date.now()
+          ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
+          yield* session.updatePart(ctx.currentText)
+          ctx.currentText = undefined
+        }
+
+        for (const part of Object.values(ctx.reasoningMap)) {
+          const end = Date.now()
+          yield* session.updatePart({
+            ...part,
+            time: { start: part.time.start ?? end, end },
+          })
+        }
+        ctx.reasoningMap = {}
+      })
+
       const cleanup = Effect.fn("SessionProcessor.cleanup")(function* () {
         if (ctx.snapshot) {
           const patch = yield* snapshot.patch(ctx.snapshot)
@@ -613,21 +657,7 @@ const layer = Layer.effect(
           ctx.snapshot = undefined
         }
 
-        if (ctx.currentText) {
-          const end = Date.now()
-          ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
-          yield* session.updatePart(ctx.currentText)
-          ctx.currentText = undefined
-        }
-
-        for (const part of Object.values(ctx.reasoningMap)) {
-          const end = Date.now()
-          yield* session.updatePart({
-            ...part,
-            time: { start: part.time.start ?? end, end },
-          })
-        }
-        ctx.reasoningMap = {}
+        yield* finalizeInFlight
 
         yield* Effect.forEach(
           Object.values(ctx.toolcalls),
@@ -700,8 +730,9 @@ const layer = Layer.effect(
 
         return yield* Effect.gen(function* () {
           yield* Effect.gen(function* () {
-            ctx.currentText = undefined
-            ctx.reasoningMap = {}
+            // Finalize half-streamed text/reasoning parts from a previous
+            // attempt instead of dropping them unclosed.
+            yield* finalizeInFlight
             yield* status.set(ctx.sessionID, { type: "busy" })
             const stream = llm.stream(streamInput)
 
