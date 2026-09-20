@@ -43,6 +43,23 @@ export const toPrimitive = <R>(
   })
 }
 
+/** Invoke(value, name): a method call through the value's prototype; primitives read their wrapper prototype unboxed. */
+export const invoke = <R>(ctx: Interpreter<R>, value: unknown, name: string, label: string) => {
+  const builtins = ctx.builtins
+  const target =
+    value instanceof Obj
+      ? value
+      : typeof value === "string"
+        ? builtins.String
+        : typeof value === "number"
+          ? builtins.Number
+          : typeof value === "boolean"
+            ? builtins.Boolean
+            : undefined
+  if (target === undefined) throw typeError(`${label} called on null or undefined.`)
+  return ctx.call(get(target, name), value, [])
+}
+
 export const toPrimitiveString = <R>(ctx: Interpreter<R>, value: unknown) =>
   Effect.map(toPrimitive(ctx, value, "string"), coerceToString)
 
